@@ -367,6 +367,10 @@ class BoltzYaml:
 
             yaml_string += self.add_sequence_information(sequence_info_dict)
 
+            # Special treatment for single-sequence mode (no MSA)
+            if self.msa_file is None and "protein" == sequence_type:
+                yaml_string += f"{DELIM}{DELIM}msa: empty\n"
+
         return yaml_string
 
     def write_yaml(self, file_path: Union[str, Path]):
