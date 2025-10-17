@@ -236,9 +236,8 @@ class BoltzYaml:
 
         return yaml_string
 
-    def add_key_and_value(self, key: str, value: str):
-        """
-        Adds the key and value to the yaml string, double tabbed
+    def add_key_and_value(self, key: str, value: str | list):
+        """Adds the key and value to the yaml string, double tabbed
 
         Args:
             key (str): The key on the left of ':'
@@ -246,7 +245,7 @@ class BoltzYaml:
         Returns:
             str: yaml string
         """
-        value = f'"{value}"'
+        value = f'"{value}"' if isinstance(value, str) else value
         return f"{DELIM}{DELIM}{key}: {value}\n"
 
     def add_ligand_information(self, ligand_dict: dict, linked_id=None):
