@@ -219,4 +219,57 @@ class BoltzInput(BaseModel):
         list[BoltzAffinity] | None, PlainSerializer(ser_boltz_properties)
     ] = None
 
+    @classmethod
+    def init_from_boltz_yaml(cls, dat: dict):
+        """Initialize from Boltz input YAML dictionary."""
+        seqs = []
+        seq_types = {}
+        for seq in dat["sequences"]:
+            for k, v in seq.items():
+                seq_model = type_key_validator(k, v, BOLTZ_SEQ_TYPE)
+                seqs.append(seq_model)
+                if isinstance(seq_model.id, list):
+                    for chain_id in seq_model.id:
+                        seq_types[chain_id] = k
+                else:
+                    seq_types[seq_model.id] = k
+
+        dat["sequences"] = seqs
+
+        constraints = []
+
+        def _build_contact_elem_from_list(chain: str, elem_id: str | int):
+            if seq_types[chain] == "ligand":
+                return BoltzContactLigand(id=chain, atom_name=elem_id)
+            else:
+                return BoltzContactResidue(id=chain, residue_idx=elem_id)
+
+        for constraint in dat.get("constraints", []):
+            for k, v in constraint.items():
+                if k == "bond":
+                    constraints.append(BoltzBond.init_from_list(v))
+                elif k == "pocket":
+                    contact_elems = [
+                        _build_contact_elem_from_list(*elem) for elem in v["contacts"]
+                    ]
+                    v["contacts"] = contact_elems
+                    constraints.append(BoltzPocket.model_validate(v))
+                elif k == "contact":
+                    v["token1"] = _build_contact_elem_from_list(*v["token1"])
+                    v["token2"] = _build_contact_elem_from_list(*v["token2"])
+                    constraints.append(BoltzContact.model_validate(v))
+                else:
+                    raise ValueError(f"Unknown constraint type: {k}")
+        if constraints:
+            dat["constraints"] = constraints
+
+        props = []
+        for prop in dat.get("properties", []):
+            for k, v in prop.items():
+                props.append(type_key_validator(k, v, BOLTZ_PROPERTY_TYPE))
+        if props:
+            dat["properties"] = props
+
+        return cls.model_validate(dat)
+
     # TODO: add constructor from ABCFold input schema

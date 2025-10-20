@@ -163,31 +163,18 @@ class AF3BondPair(AtomPair):
         return [self.atom1, self.atom2]
 
 
-def type_key_serializer(seq, type_keys: dict):
-    """Serialize sequences as dict with type key."""
-    if type(seq) not in type_keys:
-        raise TypeError(f"Unsupported sequence type: {type(seq)}")
-
-    return {type_keys[type(seq)]: seq}
-
-
-def type_key_validator(key, val, type_keys: dict):
-    """Validate data based on its type key."""
-    if key not in type_keys:
-        raise TypeError(f"Unsupported value type: {key}")
-
-    return type_keys[key].model_validate(val)
+AF3_SEQ_TYPE = {
+    "protein": AF3Protein,
+    "dna": AF3DNA,
+    "rna": AF3RNA,
+    "ligand": AF3Ligand,
+}
 
 
 def ser_af3_sequences(seqs: list[AF3Polymer | AF3Ligand]) -> list:
     """Serialize list of AF3Protein/AF3DNA/AF3RNA as list of dicts with type keys."""
-    type_keys = {
-        AF3Protein: "protein",
-        AF3DNA: "dna",
-        AF3RNA: "rna",
-        AF3Ligand: "ligand",
-    }
-    return [type_key_serializer(seq, type_keys) for seq in seqs]
+    cls2type = {v: k for k, v in AF3_SEQ_TYPE.items()}
+    return [type_key_serializer(seq, cls2type) for seq in seqs]
 
 
 class AF3Input(BaseModel):
@@ -208,5 +195,23 @@ class AF3Input(BaseModel):
     userCCDPath: str | None = None  # Path to CCD file
     dialect: str = "alphafold3"
     version: PositiveInt = 4
+
+    @classmethod
+    def init_from_af3_json(cls, dat: dict):
+        """Initialize from AlphaFold3 input JSON dictionary."""
+        seqs = []
+        for seq in dat["sequences"]:
+            for k, v in seq.items():
+                seqs.append(type_key_validator(k, v, AF3_SEQ_TYPE))
+
+        dat["sequences"] = seqs
+
+        bonds = []
+        for bond in dat.get("bondedAtomPairs", []):
+            bonds.append(AF3BondPair.init_from_list(bond))
+        if bonds:
+            dat["bondedAtomPairs"] = bonds
+
+        return cls.model_validate(dat)
 
     # TODO: add constructor from ABCFold input schema
