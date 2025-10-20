@@ -14,6 +14,8 @@ from pydantic import (
     model_validator,
 )
 
+from abcfold.schema import AtomPair, type_key_serializer, type_key_validator
+
 
 class AF3ProteinModification(BaseModel):
     """Schema for protein modifications."""
@@ -152,24 +154,8 @@ class AF3Ligand(BaseModel):
         return self
 
 
-class AF3Atom(BaseModel):
-    """Schema for an atom for specifying bonds."""
-
-    entityId: str  # corresponding to the `id` field for the entity
-    residueId: PositiveInt  # 1-based residue index within the chain
-    atomName: str  # e.g., "CA", "N", "C", etc.
-
-    @model_serializer
-    def serialize_as_list(self) -> list:
-        """Serialize as [entityId, resId, atomName]."""
-        return [self.entityId, self.residueId, self.atomName]
-
-
-class AF3BondPair(BaseModel):
+class AF3BondPair(AtomPair):
     """Schema for bonded atom pairs."""
-
-    atom1: AF3Atom
-    atom2: AF3Atom
 
     @model_serializer
     def serialize_as_list(self) -> list:
