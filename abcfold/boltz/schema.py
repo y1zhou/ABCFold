@@ -3,6 +3,7 @@
 https://github.com/jwohlwend/boltz/blob/main/docs/prediction.md
 """
 
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import (
@@ -15,14 +16,18 @@ from pydantic import (
 )
 
 from abcfold.alphafold3.schema import type_key_serializer, type_key_validator
+from abcfold.schema import (
+    ABCFoldConfig,
+    Ligand,
+    Polymer,
+    PolymerType,
+    ProteinSeq,
+    RestraintAtom,
+    RestraintType,
+)
 from abcfold.schema import AtomPair as BoltzBond
-
-
-class BoltzModification(BaseModel):
-    """Schema for modifications in Boltz input."""
-
-    position: NonNegativeInt  # 1-based residue index
-    ccd: str
+from abcfold.schema import Ligand as BoltzLigand
+from abcfold.schema import SequenceModification as BoltzModification
 
 
 class BoltzPolymer(BaseModel):
@@ -47,21 +52,6 @@ class BoltzProtein(BoltzPolymer):
     # Path to MSA in A3M format; set to "empty" for single-sequence mode
     # Boltz requires an MSA by default
     msa: str | None = None
-
-
-class BoltzLigand(BaseModel):
-    """Schema for ligand sequences in Boltz input."""
-
-    id: str | list[str]  # A, B, ..., Z, AA, BA, CA, ..., ZA, AB, BB, CB, ..., ZB, ...
-    smiles: str | None = None
-    ccd: str | None = None
-
-    @model_validator(mode="after")
-    def check_ccd_smiles_fields(self):
-        """Ensure that exactly one of CCD or smiles is provided."""
-        if (self.ccd is None) == (self.smiles is None):
-            raise ValueError("Exactly one of ccd or smiles must be provided.")
-        return self
 
 
 class BoltzContactResidue(BaseModel):
@@ -125,8 +115,8 @@ class BoltzContact(BaseModel):
 class BoltzStructuralTemplate(BaseModel):
     """Schema for structural templates in Boltz input."""
 
-    cif: str  # path to mmCIF file
-    pdb: str | None = None  #
+    cif: str | None = None  # path to mmCIF file
+    pdb: str | None = None
     chain_id: str | list[str] | None = None  # which chain to find a template for
     template_id: str | list[str] | None = None  # which chain in the template to use
     force: bool = False  # if True, a potential will be used to enforce the template
@@ -272,4 +262,125 @@ class BoltzInput(BaseModel):
 
         return cls.model_validate(dat)
 
-    # TODO: add constructor from ABCFold input schema
+
+def abcfold_to_boltz(conf: ABCFoldConfig) -> BoltzInput:
+    """Convert ABCFold config to Boltz input schema."""
+    # Sequences
+    seqs = []
+    seq_types = {}
+    templates = []  # Boltz stores templates in a separate field
+    for seq in conf.sequences:
+        # Record sequence types for each input chain
+        if isinstance(seq.id, list):
+            for chain_id in seq.id:
+                seq_types[chain_id] = (
+                    seq.seq_type.value if isinstance(seq, Polymer) else "ligand"
+                )
+        else:
+            seq_types[seq.id] = seq.seq_type if isinstance(seq, Polymer) else "ligand"
+
+        if isinstance(seq, Ligand):
+            seqs.append(seq)
+        elif isinstance(seq, ProteinSeq):
+            seqs.append(
+                BoltzProtein(
+                    id=seq.id,
+                    sequence=seq.sequence,
+                    modifications=seq.modifications,
+                    cyclic=seq.cyclic,
+                    msa=seq.unpaired_msa,
+                )
+            )
+
+            # Templates
+            if not seq.templates:
+                continue
+            for tmpl in seq.templates:
+                tmpl_path = Path(tmpl.path).expanduser().resolve()
+                cif_path, pdb_path = None, None
+                if tmpl_path.suffix.lower() in {".cif", ".cif.gz"}:
+                    cif_path = str(tmpl_path)
+                elif tmpl_path.suffix.lower() in {".pdb", ".pdb.gz"}:
+                    pdb_path = str(tmpl_path)
+                else:
+                    raise ValueError(
+                        f"Unsupported template file format: {tmpl_path.suffix}"
+                    )
+                templates.append(
+                    BoltzStructuralTemplate(
+                        cif=cif_path,
+                        pdb=pdb_path,
+                        chain_id=tmpl.query_chains,
+                        template_id=tmpl.template_chains,
+                        force=tmpl.enable_boltz_force,
+                        threshold=tmpl.boltz_template_threshold,
+                    )
+                )
+            # TODO: map potential templates
+        elif seq.seq_type == PolymerType.DNA:
+            seqs.append(
+                BoltzDNA(
+                    **seq.model_dump(
+                        include={"id", "sequence", "modifications", "cyclic"}
+                    )
+                )
+            )
+        elif seq.seq_type == PolymerType.RNA:
+            seqs.append(
+                BoltzRNA(
+                    **seq.model_dump(
+                        include={"id", "sequence", "modifications", "cyclic"}
+                    )
+                )
+            )
+        else:
+            raise ValueError(f"Unsupported polymer type: {seq.seq_type}")
+
+    # Constraints
+    def _build_contact_elem_from_list(elem: RestraintAtom):
+        if seq_types[elem.chain_id] == "ligand":
+            return BoltzContactLigand(id=elem.chain_id, atom_name=elem.atom_name)
+        else:
+            return BoltzContactResidue(id=elem.chain_id, residue_idx=elem.residue_idx)
+
+    constraints = []
+    for restraint in conf.restraints:
+        if restraint.restraint_type == RestraintType.Covalent:
+            constraints.append(BoltzBond(atom1=restraint.atom1, atom2=restraint.atom2))
+        elif restraint.restraint_type == RestraintType.Pocket:
+            constraints.append(
+                BoltzPocket(
+                    binder=restraint.boltz_binder_chain,
+                    contacts=[
+                        _build_contact_elem_from_list(restraint.atom1),
+                        _build_contact_elem_from_list(restraint.atom2),
+                    ],
+                    max_distance=restraint.max_distance,
+                    force=restraint.enable_boltz_force,
+                )
+            )
+        elif restraint.restraint_type == RestraintType.Contact:
+            constraints.append(
+                BoltzContact(
+                    token1=_build_contact_elem_from_list(restraint.atom1),
+                    token2=_build_contact_elem_from_list(restraint.atom2),
+                    max_distance=restraint.max_distance,
+                    force=restraint.enable_boltz_force,
+                )
+            )
+        else:
+            raise ValueError(f"Unsupported restraint type: {restraint.restraint_type}")
+
+    # Properties
+    properties = []
+    if conf.boltz_affinity_binder_chain is not None:
+        properties.append(BoltzAffinity(binder=conf.boltz_affinity_binder_chain))
+
+    boltz_input = BoltzInput(
+        sequences=seqs,
+        constraints=constraints if constraints else None,
+        templates=templates if templates else None,
+        properties=properties if properties else None,
+    )
+
+    return boltz_input

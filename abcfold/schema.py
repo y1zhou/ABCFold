@@ -184,9 +184,22 @@ class ABCFoldConfig(BaseModel):
     restraints: list[Restraint] | None = None
     seeds: list[int]
 
-    # Boltz-specific settings
+    # Inference parameters
+    recycle_msa_subsample: int = 0  # Boltz: num_subsampled_msa, 1024
+    num_trunk_recycles: int = 3  # Boltz: recycling_steps
+    num_diffn_timesteps: int = 200  # Boltz: sampling_steps
+    num_diffn_samples: int = 5  # Boltz: diffusion_samples
+    num_trunk_samples: int = 1
+    max_parallel_samples: int = 5
+
+    # Model-specific settings
     boltz_affinity_binder_chain: str | None = None
-    additional_boltz_cli_args: list[str] | None = None
+    boltz_additional_cli_args: list[str] | None = [
+        "--override",
+        "--write_full_pae",
+        "--write_full_pde",
+        # "--use_potentials",
+    ]
 
 
 def load_abcfold_config(conf_file: str) -> ABCFoldConfig:
@@ -219,10 +232,15 @@ def write_config(conf: BaseModel, out_file: str, **kwargs):
     out_path = Path(out_file).expanduser().resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    if "exclude_unset" not in kwargs:
+        kwargs["exclude_unset"] = True
+    if "exclude_none" not in kwargs:
+        kwargs["exclude_none"] = True
+
     conf_dict = conf.model_dump(**kwargs)
     if out_path.suffix in {".yml", ".yaml"}:
         with open(out_path, "w") as f:
-            yaml.safe_dump(conf_dict, f)
+            yaml.safe_dump(conf_dict, f, sort_keys=False)
     elif out_path.suffix == ".json":
         with open(out_path, "w") as f:
             json.dump(conf_dict, f, indent=2)
