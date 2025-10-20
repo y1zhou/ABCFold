@@ -1,4 +1,4 @@
-"""Schemas for AlphaFold3 input data structures.
+"""Schemas for AlphaFold3 input JSON.
 
 https://github.com/google-deepmind/alphafold3/blob/main/docs/input.md
 """
@@ -177,21 +177,31 @@ class AF3BondPair(BaseModel):
         return [self.atom1, self.atom2]
 
 
-def ser_af3_sequence(seq: AF3Protein | AF3DNA | AF3RNA) -> dict:
-    """Serialize AF3Protein/AF3DNA/AF3RNA as dict with type key."""
-    if isinstance(seq, AF3Protein):
-        return {"protein": seq}
-    elif isinstance(seq, AF3DNA):
-        return {"dna": seq}
-    elif isinstance(seq, AF3RNA):
-        return {"rna": seq}
-    else:
+def type_key_serializer(seq, type_keys: dict):
+    """Serialize sequences as dict with type key."""
+    if type(seq) not in type_keys:
         raise TypeError(f"Unsupported sequence type: {type(seq)}")
 
+    return {type_keys[type(seq)]: seq}
 
-def ser_af3_sequences(seqs: list[AF3Protein | AF3DNA | AF3RNA]) -> list:
+
+def type_key_validator(key, val, type_keys: dict):
+    """Validate data based on its type key."""
+    if key not in type_keys:
+        raise TypeError(f"Unsupported value type: {key}")
+
+    return type_keys[key].model_validate(val)
+
+
+def ser_af3_sequences(seqs: list[AF3Polymer | AF3Ligand]) -> list:
     """Serialize list of AF3Protein/AF3DNA/AF3RNA as list of dicts with type keys."""
-    return [ser_af3_sequence(seq) for seq in seqs]
+    type_keys = {
+        AF3Protein: "protein",
+        AF3DNA: "dna",
+        AF3RNA: "rna",
+        AF3Ligand: "ligand",
+    }
+    return [type_key_serializer(seq, type_keys) for seq in seqs]
 
 
 class AF3Input(BaseModel):
@@ -203,7 +213,8 @@ class AF3Input(BaseModel):
     name: str
     modelSeeds: list[int]
     sequences: Annotated[
-        list[AF3Protein | AF3DNA | AF3RNA], PlainSerializer(ser_af3_sequences)
+        list[AF3Protein | AF3DNA | AF3RNA | AF3Ligand],
+        PlainSerializer(ser_af3_sequences),
     ]
     bondedAtomPairs: list[AF3BondPair] | None = None
     # userCCD takes precedence over userCCDPath
@@ -211,3 +222,5 @@ class AF3Input(BaseModel):
     userCCDPath: str | None = None  # Path to CCD file
     dialect: str = "alphafold3"
     version: PositiveInt = 4
+
+    # TODO: add constructor from ABCFold input schema
