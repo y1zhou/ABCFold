@@ -3,24 +3,21 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Union
 
 from abcfold.boltz.af3_to_boltz import BoltzYaml
-from abcfold.boltz.check_install import check_boltz
 
 logger = logging.getLogger("logger")
 
 
 def run_boltz(
-    input_json: Union[str, Path],
-    output_dir: Union[str, Path],
+    input_json: str | Path,
+    output_dir: str | Path,
     save_input: bool = False,
     test: bool = False,
     number_of_models: int = 5,
     num_recycles: int = 10,
 ) -> bool:
-    """
-    Run Boltz using the input JSON file
+    """Run Boltz using the input JSON file
 
     Args:
         input_json (Union[str, Path]): Path to the input JSON file
@@ -41,8 +38,8 @@ def run_boltz(
     input_json = Path(input_json)
     output_dir = Path(output_dir)
 
-    logger.debug("Checking if boltz is installed")
-    check_boltz()
+    # logger.debug("Checking if boltz is installed")
+    # check_boltz()
 
     with tempfile.TemporaryDirectory() as temp_dir:
         working_dir = Path(temp_dir)
@@ -69,7 +66,7 @@ def run_boltz(
                 if not test
                 else generate_boltz_test_command()
             )
-
+            logger.debug("Running command: %s", " ".join(cmd))
             with subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -104,14 +101,13 @@ def run_boltz(
 
 
 def generate_boltz_command(
-    input_yaml: Union[str, Path],
-    output_dir: Union[str, Path],
+    input_yaml: str | Path,
+    output_dir: str | Path,
     number_of_models: int = 5,
     num_recycles: int = 10,
     seed: int = 42,
 ) -> list:
-    """
-    Generate the Boltz command
+    """Generate the Boltz command
 
     Args:
         input_yaml (Union[str, Path]): Path to the input YAML file
@@ -141,8 +137,7 @@ def generate_boltz_command(
 
 
 def generate_boltz_test_command() -> list:
-    """
-    Generate the test command for Boltz
+    """Generate the test command for Boltz
 
     Args:
         None
@@ -150,7 +145,6 @@ def generate_boltz_test_command() -> list:
     Returns:
         list: The Boltz test command
     """
-
     return [
         "boltz",
         "predict",

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Union
 
 from abcfold.chai1.af3_to_chai import ChaiFasta
-from abcfold.chai1.check_install import check_chai1
 
 logger = logging.getLogger("logger")
 
@@ -43,8 +42,8 @@ def run_chai(
     input_json = Path(input_json)
     output_dir = Path(output_dir)
 
-    logger.debug("Checking if Chai-1 is installed")
-    check_chai1()
+    # logger.debug("Checking if Chai-1 is installed")
+    # check_chai1()
 
     with tempfile.TemporaryDirectory() as temp_dir:
         working_dir = Path(temp_dir)
@@ -79,7 +78,7 @@ def run_chai(
                 if not test
                 else generate_chai_test_command()
             )
-
+            logger.debug("Running command: %s", " ".join(cmd))
             with subprocess.Popen(
                 cmd,
                 stdout=sys.stdout,
@@ -147,9 +146,9 @@ def generate_chai_command(
     cmd += ["--num-trunk-recycles", str(num_recycles)]
     cmd += ["--seed", str(seed)]
 
-    assert not (
-        use_templates_server and template_hits_path
-    ), "Cannot specify both templates server and path"
+    assert not (use_templates_server and template_hits_path), (
+        "Cannot specify both templates server and path"
+    )
 
     if shutil.which("kalign") is None and (use_templates_server or template_hits_path):
         logger.warning(

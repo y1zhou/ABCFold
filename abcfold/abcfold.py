@@ -10,26 +10,42 @@ import webbrowser
 from pathlib import Path
 
 from abcfold.alphafold3.run_alphafold3 import run_alphafold3
-from abcfold.argparse_utils import (alphafold_argparse_util,
-                                    boltz_argparse_util, chai_argparse_util,
-                                    custom_template_argpase_util,
-                                    main_argpase_util, mmseqs2_argparse_util,
-                                    prediction_argparse_util,
-                                    raise_argument_errors,
-                                    visuals_argparse_util)
-from abcfold.html.html_utils import (PORT, NoCacheHTTPRequestHandler,
-                                     get_all_cif_files, get_model_data,
-                                     get_model_sequence_data,
-                                     output_open_html_script, plots,
-                                     render_template)
+from abcfold.argparse_utils import (
+    alphafold_argparse_util,
+    boltz_argparse_util,
+    chai_argparse_util,
+    custom_template_argpase_util,
+    main_argpase_util,
+    mmseqs2_argparse_util,
+    prediction_argparse_util,
+    raise_argument_errors,
+    visuals_argparse_util,
+)
+from abcfold.html.html_utils import (
+    PORT,
+    NoCacheHTTPRequestHandler,
+    get_all_cif_files,
+    get_model_data,
+    get_model_sequence_data,
+    output_open_html_script,
+    plots,
+    render_template,
+)
 from abcfold.output.alphafold3 import AlphafoldOutput
 from abcfold.output.boltz import BoltzOutput
 from abcfold.output.chai import ChaiOutput
 from abcfold.output.file_handlers import superpose_models
-from abcfold.output.utils import (get_gap_indicies, insert_none_by_minus_one,
-                                  make_dummy_m8_file)
-from abcfold.scripts.abc_script_utils import (check_input_json, make_dir,
-                                              make_dummy_af3_db, setup_logger)
+from abcfold.output.utils import (
+    get_gap_indicies,
+    insert_none_by_minus_one,
+    make_dummy_m8_file,
+)
+from abcfold.scripts.abc_script_utils import (
+    check_input_json,
+    make_dir,
+    make_dummy_af3_db,
+    setup_logger,
+)
 from abcfold.scripts.add_mmseqs_msa import add_msa_to_json
 
 logger = setup_logger()
@@ -44,7 +60,7 @@ def run(args, config, defaults, config_file):
 
     Args:
         args (argparse.Namespace): Arguments from the command line
-        config (configparser.SafeConfigParser): Config parser object
+        config (configparser.ConfigParser): Config parser object
         defaults (dict): Default values from the config file
         config_file (Path): Path to the config file
 
@@ -91,20 +107,20 @@ def run(args, config, defaults, config_file):
         logger.error("Input JSON must contain a 'name' field")
         sys.exit(1)
 
-    if args.alphafold3:
-        from abcfold.alphafold3.check_install import check_af3_install
+    # if args.alphafold3:
+    #     from abcfold.alphafold3.check_install import check_af3_install
 
-        check_af3_install(interactive=False, sif_path=args.sif_path)
+    #     check_af3_install(interactive=False, sif_path=args.sif_path)
 
-    if args.boltz:
-        from abcfold.boltz.check_install import check_boltz
+    # if args.boltz:
+    #     from abcfold.boltz.check_install import check_boltz
 
-        check_boltz()
+    #     check_boltz()
 
-    if args.chai1:
-        from abcfold.chai1.check_install import check_chai1
+    # if args.chai1:
+    #     from abcfold.chai1.check_install import check_chai1
 
-        check_chai1()
+    #     check_chai1()
 
     with tempfile.TemporaryDirectory() as temp_dir_str:
         temp_dir = Path(temp_dir_str)
@@ -134,7 +150,7 @@ def run(args, config, defaults, config_file):
         else:
             run_json = Path(args.input_json)
 
-        successful_runs = []
+        af3_success, boltz_success, chai_success = False, False, False
         if args.alphafold3:
             af3_database = args.database_dir
             if args.mmseqs2 or (
@@ -168,7 +184,6 @@ def run(args, config, defaults, config_file):
                 ao = AlphafoldOutput(af3_out_dir, input_params, name)
                 outputs.append(ao)
                 run_json = ao.input_json
-            successful_runs.append(af3_success)
 
         if args.boltz:
             from abcfold.boltz.run_boltz import run_boltz
@@ -185,7 +200,6 @@ def run(args, config, defaults, config_file):
                 bolt_out_dirs = list(args.output_dir.glob("boltz_results*"))
                 bo = BoltzOutput(bolt_out_dirs, input_params, name, args.save_input)
                 outputs.append(bo)
-            successful_runs.append(boltz_success)
 
         if args.chai1:
             from abcfold.chai1.run_chai1 import run_chai
@@ -209,12 +223,12 @@ def run(args, config, defaults, config_file):
                 chai_output_dirs = list(args.output_dir.glob("chai_output*"))
                 co = ChaiOutput(chai_output_dirs, input_params, name, args.save_input)
                 outputs.append(co)
-            successful_runs.append(chai_success)
 
         if args.no_visuals:
             logger.info("Visuals disabled")
             return
 
+        successful_runs = (af3_success, boltz_success, chai_success)
         if not any(successful_runs):
             logger.error("No models were generated")
             return
@@ -233,14 +247,58 @@ def run(args, config, defaults, config_file):
 
         alphafold_models = {"models": []}
 
-        if args.alphafold3:
-            if af3_success:
-                programs_run.append("AlphaFold3")
-                for seed in ao.output.keys():
-                    for idx in ao.output[seed].keys():
-                        model = ao.output[seed][idx]["cif"]
+        if args.alphafold3 and af3_success:
+            programs_run.append("AlphaFold3")
+            for seed in ao.output.keys():
+                for idx in ao.output[seed].keys():
+                    model = ao.output[seed][idx]["cif"]
+                    model.check_clashes()
+                    score_file = ao.output[seed][idx]["summary"]
+                    plddt = model.residue_plddts
+                    if len(indicies) > 0:
+                        plddt = insert_none_by_minus_one(indicies[index_counter], plddt)
+                    index_counter += 1
+                    model_data = get_model_data(
+                        model,
+                        plot_dict,
+                        "AlphaFold3",
+                        plddt,
+                        score_file,
+                        args.output_dir,
+                    )
+                    alphafold_models["models"].append(model_data)
+
+        boltz_models = {"models": []}
+        if args.boltz and boltz_success:
+            programs_run.append("Boltz")
+            for seed in bo.output.keys():
+                for idx in bo.output[seed].keys():
+                    model = bo.output[seed][idx]["cif"]
+                    model.check_clashes()
+                    score_file = bo.output[seed][idx]["json"]
+                    plddt = model.residue_plddts
+                    if len(indicies) > 0:
+                        plddt = insert_none_by_minus_one(indicies[index_counter], plddt)
+                    index_counter += 1
+                    model_data = get_model_data(
+                        model,
+                        plot_dict,
+                        "Boltz",
+                        plddt,
+                        score_file,
+                        args.output_dir,
+                    )
+                    boltz_models["models"].append(model_data)
+
+        chai_models = {"models": []}
+        if args.chai1 and chai_success:
+            programs_run.append("Chai-1")
+            for seed in co.output.keys():
+                for idx in co.output[seed].keys():
+                    if idx >= 0:
+                        model = co.output[seed][idx]["cif"]
                         model.check_clashes()
-                        score_file = ao.output[seed][idx]["summary"]
+                        score_file = co.output[seed][idx]["scores"]
                         plddt = model.residue_plddts
                         if len(indicies) > 0:
                             plddt = insert_none_by_minus_one(
@@ -250,63 +308,12 @@ def run(args, config, defaults, config_file):
                         model_data = get_model_data(
                             model,
                             plot_dict,
-                            "AlphaFold3",
+                            "Chai-1",
                             plddt,
                             score_file,
                             args.output_dir,
                         )
-                        alphafold_models["models"].append(model_data)
-
-        boltz_models = {"models": []}
-        if args.boltz:
-            if boltz_success:
-                programs_run.append("Boltz")
-                for seed in bo.output.keys():
-                    for idx in bo.output[seed].keys():
-                        model = bo.output[seed][idx]["cif"]
-                        model.check_clashes()
-                        score_file = bo.output[seed][idx]["json"]
-                        plddt = model.residue_plddts
-                        if len(indicies) > 0:
-                            plddt = insert_none_by_minus_one(
-                                indicies[index_counter], plddt
-                            )
-                        index_counter += 1
-                        model_data = get_model_data(
-                            model,
-                            plot_dict,
-                            "Boltz",
-                            plddt,
-                            score_file,
-                            args.output_dir
-                        )
-                        boltz_models["models"].append(model_data)
-
-        chai_models = {"models": []}
-        if args.chai1:
-            if chai_success:
-                programs_run.append("Chai-1")
-                for seed in co.output.keys():
-                    for idx in co.output[seed].keys():
-                        if idx >= 0:
-                            model = co.output[seed][idx]["cif"]
-                            model.check_clashes()
-                            score_file = co.output[seed][idx]["scores"]
-                            plddt = model.residue_plddts
-                            if len(indicies) > 0:
-                                plddt = insert_none_by_minus_one(
-                                    indicies[index_counter], plddt
-                                )
-                            index_counter += 1
-                            model_data = get_model_data(
-                                model,
-                                plot_dict,
-                                "Chai-1",
-                                plddt,
-                                score_file,
-                                args.output_dir,
-                            )
-                            chai_models["models"].append(model_data)
+                        chai_models["models"].append(model_data)
 
         combined_models = (
             alphafold_models["models"] + boltz_models["models"] + chai_models["models"]
@@ -421,7 +428,7 @@ def main():
 
     defaults = {}
     config_file = Path(__file__).parent.joinpath("data", "config.ini")
-    config = configparser.SafeConfigParser()
+    config = configparser.ConfigParser()
 
     if config_file.exists():
         config.read(str(config_file))
