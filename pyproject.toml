@@ -6,11 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "abcfold"
 version = "1.0.9"
 description = "Input processing tools for AlphaFold3, Boltz and Chai-1"
+requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "BSD License" }
 authors = [
     { name = "Adam Simpkin", email = "hlasimpk@liverpool.ac.uk" },
-    { name = "Luc Elliott", email = "hllelli2@liverpool.ac.uk" }
+    { name = "Luc Elliott", email = "hllelli2@liverpool.ac.uk" },
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
