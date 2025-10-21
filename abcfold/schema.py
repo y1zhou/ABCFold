@@ -150,7 +150,7 @@ class Glycan(BaseModel):
     """Schema for individual glycans."""
 
     id: str | list[str]  # chain ID(s)
-    chai_str: str  # glycan string in Chai notation
+    chai_str: str  # glycan string in Chai notation (modified CCD codes)
     description: str | None = None  # comment describing the glycan
 
 
@@ -170,6 +170,12 @@ class Restraint(BaseModel):
     """Schema for distance restraints.
 
     Note that AF3 only supports bonded restraints.
+
+    In Boltz, the `boltz_binder_chain` should be set to the ligand chain ID that binds
+    to the pocket.
+    In Chai, the atom that does not belong to `boltz_binder_chain` would be used for
+    specifying the pocket, and for the binder chain only the chain ID is needed.
+    The atom and residue index information would be ignored.
     """
 
     restraint_type: RestraintType
@@ -180,7 +186,7 @@ class Restraint(BaseModel):
 
     # Boltz specific fields
     enable_boltz_force: bool = False  # use a potential to enforce the restraint
-    boltz_binder_chain: str | None = None
+    boltz_binder_chain: str | None = None  # only used for pocket restraints
 
 
 class ABCFoldConfig(BaseModel):
