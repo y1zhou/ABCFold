@@ -2,6 +2,8 @@
 
 import logging
 import subprocess as sp
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from abcfold.boltz.schema import abcfold_to_boltz
@@ -38,16 +40,22 @@ def run_boltz(abcfold_conf_file: str | Path, output_dir: str | Path) -> bool:
 
         log_path = log_dir / f"{run_id}_boltz_seed{seed}.log"
         with (
-            sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT) as p,  #  noqa: S603
-            open(log_path, "wb") as log_file,
+            sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT, encoding="utf-8") as p,  #  noqa: S603
+            open(log_path, "w") as log_file,
         ):
+            now = time.time()
+            log_file.write(f"Time: {str(datetime.now(UTC))}\n")
+            log_file.write(f"Running command: {' '.join(cmd)}\n\n")
+
             logger.debug(f"Running command: {' '.join(cmd)}\nSaving log to {log_path}")
-            log_file.write(f"Running command: {' '.join(cmd)}\n\n".encode())
             stdout = ""
             while (buffered_output := p.stdout.readline()) != "" or p.poll() is None:
-                stdout += buffered_output.decode()
+                stdout += buffered_output
                 log_file.write(buffered_output)
                 log_file.flush()
+
+            log_file.write(f"\nFinished at: {str(datetime.now(UTC))}\n")
+            log_file.write(f"Elapsed time: {time.time() - now:.2f} seconds\n")
 
             if p.returncode != 0:
                 logger.error(f"Boltz run failed. Error log is in {log_path}")
