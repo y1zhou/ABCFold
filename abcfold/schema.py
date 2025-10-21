@@ -33,7 +33,8 @@ class Atom(BaseModel):
 
     chain_id: str  # corresponding to the `id` field for the entity
     residue_idx: PositiveInt  # 1-based residue index within the chain
-    atom_name: str  # e.g., "CA", "N", "C", etc.
+    atom_name: str  # e.g., "CA", "N", "C", etc. Follow rdkit for ligands
+    residue_name: str | None  # Chai requires this for covalent bonds
 
     @model_serializer
     def serialize_as_list(self) -> list:
@@ -145,6 +146,14 @@ class Ligand(BaseModel):
         return self
 
 
+class Glycan(BaseModel):
+    """Schema for individual glycans."""
+
+    id: str | list[str]  # chain ID(s)
+    chai_str: str  # glycan string in Chai notation
+    description: str | None = None  # comment describing the glycan
+
+
 class RestraintType(str, Enum):
     """Enum for restraint types."""
 
@@ -157,15 +166,6 @@ class RestraintType(str, Enum):
         return self.value
 
 
-class RestraintAtom(BaseModel):
-    """Schema for an atom in a restraint."""
-
-    chain_id: str  # corresponding to the `id` field for the entity
-    residue_name: str | None
-    residue_idx: PositiveInt | None  # 1-based residue index within the chain
-    atom_name: str  # e.g., "CA", "N", "C", etc. Follow rdkit for ligands
-
-
 class Restraint(BaseModel):
     """Schema for distance restraints.
 
@@ -173,8 +173,8 @@ class Restraint(BaseModel):
     """
 
     restraint_type: RestraintType
-    atom1: RestraintAtom
-    atom2: RestraintAtom
+    atom1: Atom
+    atom2: Atom
     max_distance: float  # maximum distance (Angstroms); ignored for covalent bonds
     description: str | None = None  # comment describing the restraint
 
@@ -187,8 +187,7 @@ class ABCFoldConfig(BaseModel):
     """Config schema for ABCFold."""
 
     # General settings
-    sequences: list[Polymer | ProteinSeq | Ligand]
-    bonds: list[AtomPair] | None = None
+    sequences: list[Polymer | ProteinSeq | Ligand | Glycan]
     restraints: list[Restraint] | None = None
     seeds: list[int]
 

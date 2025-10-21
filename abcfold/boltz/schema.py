@@ -18,11 +18,11 @@ from pydantic import (
 from abcfold.alphafold3.schema import type_key_serializer, type_key_validator
 from abcfold.schema import (
     ABCFoldConfig,
+    Atom,
     Ligand,
     Polymer,
     PolymerType,
     ProteinSeq,
-    RestraintAtom,
     RestraintType,
 )
 from abcfold.schema import AtomPair as BoltzBond
@@ -179,9 +179,7 @@ BOLTZ_PROPERTY_TYPE = {
 }
 
 
-def ser_boltz_properties(
-    properties: list[BoltzBond | BoltzPocket | BoltzContact] | None,
-) -> list | None:
+def ser_boltz_properties(properties: list[BoltzAffinity] | None) -> list | None:
     """Serialize list of properties as list of dicts with type keys."""
     if properties is None:
         return None
@@ -334,10 +332,11 @@ def abcfold_to_boltz(conf: ABCFoldConfig) -> BoltzInput:
                 )
             )
         else:
+            # Glycans not yet supported in Boltz
             raise ValueError(f"Unsupported polymer type: {seq.seq_type}")
 
     # Constraints
-    def _build_contact_elem_from_list(elem: RestraintAtom):
+    def _build_contact_elem_from_list(elem: Atom):
         if seq_types[elem.chain_id] == "ligand":
             return BoltzContactLigand(id=elem.chain_id, atom_name=elem.atom_name)
         else:
