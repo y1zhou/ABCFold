@@ -4,10 +4,10 @@ import logging
 from pathlib import Path
 
 import pandas as pd
-from sympy import Atom
 
 from abcfold.schema import (
     ABCFoldConfig,
+    Atom,
     Glycan,
     Ligand,
     Polymer,
@@ -55,7 +55,10 @@ class ChaiConfig:
         self.fasta = self.workdir / f"{self.run_id}.fasta"
         self.restraints = self.workdir / f"{self.run_id}.restraints"
 
-        self.seq_metadata = self.generate_chai_fasta(self.fasta, self.ccd_lib_dir)
+        self.seq_metadata: dict[str, tuple[str, str]] = self.generate_chai_fasta(
+            self.fasta, self.ccd_lib_dir
+        )
+        self.generate_chai_restraints()
 
     def generate_chai_fasta(
         self, ccd_lib_dir: str | Path | None = None
@@ -143,6 +146,10 @@ class ChaiConfig:
         for r in self.conf.restraints:
             chain1_id, chain1_type = self.seq_metadata[r.atom1.chain_id]
             chain2_id, chain2_type = self.seq_metadata[r.atom2.chain_id]
+
+            if chain1_id == chain2_id:
+                raise ValueError(f"Restraints must be inter-chain for Chai-1, got: {r}")
+
             match r.restraint_type:
                 case RestraintType.Covalent:
                     restraint_type = "covalent"
@@ -218,9 +225,16 @@ class ChaiConfig:
         return Chem.MolToSmiles(mol)
 
     @staticmethod
-    def _build_res_idx(restraint_type: RestraintType, residue: Atom) -> str:
-        """Build residue index string for Chai-1 restraints."""
-        ...
+    def _build_res_idx(restraint_type: str, chain_type: str, atom: Atom) -> str:
+        """Build residue index string for Chai-1 restraints.
+
+        Covalent bond: N436@N (residue), @C1 (ligand)
+        Contact: R84, G7
+        """
+        if chain_type in {"ligand", "glycan"}:
+            return f"@{atom.atom_name}"
+        else:
+            return f"{atom.residue_name}{atom.residue_idx}@{atom.atom_name}"
 
 
 def run_chai(abcfold_conf_file: str | Path, output_dir: str | Path) -> bool:

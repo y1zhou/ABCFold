@@ -176,6 +176,7 @@ class Restraint(BaseModel):
     In Chai, the atom that does not belong to `boltz_binder_chain` would be used for
     specifying the pocket, and for the binder chain only the chain ID is needed.
     The atom and residue index information would be ignored.
+    Chai also expects the pocket chain to be in Chain B.
     """
 
     restraint_type: RestraintType
