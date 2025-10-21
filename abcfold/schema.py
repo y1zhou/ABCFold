@@ -96,6 +96,10 @@ class PolymerType(str, Enum):
     DNA = "dna"
     RNA = "rna"
 
+    def __repr__(self):
+        """Return string representation when being serialized."""
+        return self.value
+
 
 class Polymer(BaseModel):
     """Base schema for polymers (protein, DNA, and RNA)."""
@@ -148,6 +152,10 @@ class RestraintType(str, Enum):
     Pocket = "pocket"
     Contact = "contact"
 
+    def __repr__(self):
+        """Return string representation when being serialized."""
+        return self.value
+
 
 class RestraintAtom(BaseModel):
     """Schema for an atom in a restraint."""
@@ -179,18 +187,16 @@ class ABCFoldConfig(BaseModel):
     """Config schema for ABCFold."""
 
     # General settings
-    sequences: list[Polymer | Ligand]
+    sequences: list[Polymer | ProteinSeq | Ligand]
     bonds: list[AtomPair] | None = None
     restraints: list[Restraint] | None = None
     seeds: list[int]
 
     # Inference parameters
-    recycle_msa_subsample: int = 0  # Boltz: num_subsampled_msa, 1024
     num_trunk_recycles: int = 3  # Boltz: recycling_steps
     num_diffn_timesteps: int = 200  # Boltz: sampling_steps
     num_diffn_samples: int = 5  # Boltz: diffusion_samples
     num_trunk_samples: int = 1
-    max_parallel_samples: int = 5
 
     # Model-specific settings
     boltz_affinity_binder_chain: str | None = None
@@ -204,8 +210,6 @@ class ABCFoldConfig(BaseModel):
 
 def load_abcfold_config(conf_file: str) -> ABCFoldConfig:
     """Load ABCFold config from a file."""
-    import json
-
     import yaml
 
     conf_path = Path(conf_file).expanduser().resolve()
@@ -213,21 +217,21 @@ def load_abcfold_config(conf_file: str) -> ABCFoldConfig:
         raise FileNotFoundError(f"Config file not found: {conf_path}")
     if conf_path.suffix in {".yml", ".yaml"}:
         with open(conf_path) as f:
-            conf_dict = yaml.safe_load(f)
+            return ABCFoldConfig.model_validate(yaml.safe_load(f))
     elif conf_path.suffix == ".json":
-        with open(conf_path) as f:
-            conf_dict = json.load(f)
+        return ABCFoldConfig.model_validate_json(conf_path.read_bytes())
     else:
         raise ValueError("Unsupported config file format. Use .yaml, .yml, or .json")
-
-    return ABCFoldConfig.model_validate(conf_dict)
 
 
 def write_config(conf: BaseModel, out_file: str, **kwargs):
     """Write config to a file."""
-    import json
-
     import yaml
+
+    yaml.SafeDumper.add_multi_representer(
+        Enum,
+        yaml.representer.SafeRepresenter.represent_str,
+    )
 
     out_path = Path(out_file).expanduser().resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -237,12 +241,11 @@ def write_config(conf: BaseModel, out_file: str, **kwargs):
     if "exclude_none" not in kwargs:
         kwargs["exclude_none"] = True
 
-    conf_dict = conf.model_dump(**kwargs)
     if out_path.suffix in {".yml", ".yaml"}:
         with open(out_path, "w") as f:
-            yaml.safe_dump(conf_dict, f, sort_keys=False)
+            yaml.safe_dump(conf.model_dump(**kwargs), f, sort_keys=False)
     elif out_path.suffix == ".json":
         with open(out_path, "w") as f:
-            json.dump(conf_dict, f, indent=2)
+            f.write(conf.model_dump_json(indent=2, **kwargs))
     else:
         raise ValueError("Unsupported config file format. Use .yaml, .yml, or .json")
