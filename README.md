@@ -3,10 +3,22 @@
 ![Build Status](https://github.com/rigdenlab/ABCFold/actions/workflows/python-package.yml/badge.svg)
 ![Coverage](https://raw.githubusercontent.com/rigdenlab/ABCFold/refs/heads/main/.blob/coverage.svg)
 
-
 Scripts to run AlphaFold3, Boltz and Chai-1 with MMseqs2 Multiple sequence alignments (MSAs) and custom templates.
 
+## Main differences from the [original ABCFold](https://github.com/rigdenlab/ABCFold)
+
+- [x] Use a unified JSON/YAML config format for all models.
+- [x] Support for model-specific parameters (e.g. Boltz affinity, Chai-1 templates).
+- [ ] CLI subcommand for the conversion between different config formats.
+  - [ ] ABCFold -> Chai-1 FASTA
+  - [x] ABCFold -> Boltz YAML
+  - [ ] ABCFold -> AlphaFold3 JSON
+  - [ ] AlphaFold3 JSON -> ABCFold
+  - [ ] Boltz YAML -> ABCFold
+- [ ] CLI subcommand for MSA search and generating templates for all models.
+
 ## Table of Contents
+
 - [Installation](#installation)
 - [Usage](#usage)
 - [Common Issues](#common-issues)
@@ -17,6 +29,7 @@ Scripts to run AlphaFold3, Boltz and Chai-1 with MMseqs2 Multiple sequence align
 We recommend installing this package in a virtual environment or conda / micromamba environment. Python 3.11 is recommended, but the package should work with Python 3.9 and above.
 
 To set up a conda/micromamba environment, run:
+
 ```bash
 conda create -n abcfold python=3.11
 conda activate abcfold
@@ -29,13 +42,11 @@ micromamba env create -n abcfold python=3.11
 micromamba activate abcfold
 ```
 
-
 To install the package from PyPI, run:
 
 ```bash
 python -m pip install abcfold
 ```
-
 
 Or, to install the package from source, first clone the repository and then run:
 
@@ -79,9 +90,11 @@ ABCFold will run Alphafold3, Boltz and Chai-1 consecutively. The program takes a
 Please make sure you have AlphaFold3 installed on your system (Instructions [here](https://github.com/google-deepmind/alphafold3/blob/main/docs/installation.md)) and have procured the model parameters. Boltz and Chai-1 are installed upon runtime.
 
 For the majority of jobs, ABCFold can be run as follows:
+
 ```bash
 abcfold <input_json>  <output_dir> -abc --mmseqs2 --model_params <path_to_af3_model_params>
 ```
+
 > [!NOTE]
 > `--model_params` is stored after the first run, therefore subsequent ABCFold jobs don't require this flag.
 
@@ -89,15 +102,16 @@ abcfold <input_json>  <output_dir> -abc --mmseqs2 --model_params <path_to_af3_mo
 > If you wish to run ABCFold with the AlphaFold3 JACKHMMER MSA search, you need to remove the `--mmseqs2` flag and provide the `--database` flag with the path to the directory containing the AlphaFold3 databases.
 > The `--database` path will also be stored after the first run and won't be required in subsequent ABCFold jobs.
 
->[!WARNING]
+> [!WARNING]
 > When using the `--mmseqs2` flag, AlphaFold3 will be run without pairedMSA information. If this is important for your target (e.g. modelling a complex), we recommend running the AlphaFold3 JACKHMMER MSA search as the pairedMSA is automatically generated.
 
->[!WARNING]
->`--model_params` and `--database` will need to be provided again if you do a fresh install.
+> [!WARNING]
+> `--model_params` and `--database` will need to be provided again if you do a fresh install.
 
 However, there you may wish to use the following flags to add run time options such as the use of templates, or the number of models to create.
 
 #### Main arguments
+
 - `<input_json>`: Path to the input AlphaFold3 JSON file.
 - `<output_dir>`: Path to the output directory.
 - `-a`, `-b`, `-c` (`--alphafold3`, `--boltz`,`--chai1`): Flags to run Alphafold3, Boltz and Chai-1 respectively. If none of these flags are provided, Alphafold3 will be run by default.
@@ -110,20 +124,24 @@ However, there you may wish to use the following flags to add run time options s
 
 - `--model_params`: Path to the directory containing the AlphaFold3 model parameters.
 - `--database`: [optional] Path to the directory containing the AlphaFold3 databases #Note: This is not used if using the
-`--mmseqs2` flag.
+  `--mmseqs2` flag.
 - `--sif_path`: [optional] Path to sif file if using an AlphaFold3 singularity instead of Docker
 - `--use_af3_template_search`[optional] If providing your own custom MSA or you've ran `--mmseqs2`, allow Alphafold3 to search for templates
 
 #### Template arguments
 
 - `--templates`: Flag to enable a template search
+
 - `--num_templates`: [optional] The number of templates to use (default: 20)
 
 - `--custom_template`: [optional] Path to a custom template file in mmCIF format or a list of custom templates. A more detailed decription on how to use the custom template argument can be found below Visualisation arguments.
+
 - `--custom_template_chain`: [conditionally required] The chain ID of the chain to use in your custom template, only required if using a multi-chain template. If providing a list of custom templates, you will need to provide a list of custom template chains.
+
 - `--target_id`: [conditionally required] The ID of the sequence the custom template relates to, only required if modelling a complex. If providing a list of custom templates, you can provide a single target ID if they all relate to the same target. Otherwise, you should provide a list of target IDs corresponding to the list of custom templates.
 
 #### Visualisation arguments
+
 - `--no_server`: [optional] Flag to not run the server for the output page (see below) but the pages are created , useful for running on a cluster.
 - `--no_visuals`: [optional] Flag to not generate any output pages or PAE plots and only output the models.
 
@@ -142,6 +160,7 @@ If you had multiple IDs in your input sequence, multiple template files and you 
 abcfold <input_json>  <output_dir> -abc --mmseqs2 --custom_template custom_a.pdb custom_b.pdb custom_c.pdb --custom_template_chain A B B --target_id A A B
 
 ```
+
 ### Output
 
 ABCFold will output the AlphaFold, Boltz and/or Chai models in the `<output_dir>`, it will also produce an output page containing a results table and informative [PAE viewer](https://gitlab.gwdg.de/general-microbiology/pae-viewer). This is opened automatically in your default browser unless the `--no_server` or `--no_visuals` flags are used.
@@ -154,14 +173,15 @@ python open_output.py
 ```
 
 ## Main Page Example
+
 ![main_page_example](https://raw.githubusercontent.com/rigdenlab/ABCFold/refs/heads/main/abcfold/html/static/main_page_example.png)
 
 ## PAE Viewer example
+
 ![pae_viewer_example](https://raw.githubusercontent.com/rigdenlab/ABCFold/refs/heads/main/abcfold/html/static/pae_viewer_example.png)
 
 The output page will be available on `http://localhost:8000/index.html`. If you need to rerun the server to create the output,
 you will find `open_output.py` in your `<output_dir>`. This needs to be run from your `<output_dir>`.
-
 
 ## Extra Features
 
@@ -183,7 +203,7 @@ mmseqs2msa --input_json <input_json> --output_json <output_json> --templates --n
 ```
 
 - `<input_json>`: Path to the input AlphaFold3 JSON file.
-- `<output_json>`: [optional] Path to the output JSON file (default: `<input_json_stem>`_mmseqs.json).
+- `<output_json>`: [optional] Path to the output JSON file (default: `<input_json_stem>`\_mmseqs.json).
 - `<num_templates>`: [optional] The number of templates to use (default: 20)
 - `<mmseqs_database>`: [optional] The path to the database used by a local copy of MMSeqs2, provided mmseqs is installed, the inclusion of this flag allows MMseqs2 to be run locally.
 
@@ -196,7 +216,6 @@ bash
 MMSEQS_NO_INDEX=1 ./setup_mmseqs_databases.sh /path/to/db_folder
 ```
 
-
 #### Without Templates
 
 To run the script without templates, use the following command:
@@ -206,8 +225,7 @@ mmseqs2msa --input_json <input_json> --output_json <output_json>
 ```
 
 - `<input_json>`: Path to the input AlphaFold3 JSON file.
-- `<output_json>`: [optional] Path to the output JSON file (default: `<input_json_stem>`_mmseqs.json).
-
+- `<output_json>`: [optional] Path to the output JSON file (default: `<input_json_stem>`\_mmseqs.json).
 
 ### Adding custom templates
 
@@ -222,11 +240,10 @@ custom_templates --input_json <input_json> --output_json <output_json> --custom_
 ```
 
 - `<input_json>`: Path to the input AlphaFold3 JSON file.
-- `<output_json>`: [optional] Path to the output JSON file (default: `<input_json_stem>`_custom_template.json).
+- `<output_json>`: [optional] Path to the output JSON file (default: `<input_json_stem>`\_custom_template.json).
 - `<custom_template>`: [optional] Path to a custom template file in mmCIF format or a list of custom templates.
 - `<custom_template_chain>`: [conditionally required] The chain ID of the chain to use in your custom template, only required if using a multi-chain template. If providing a list of custom templates, you will need to provide a list of custom template chains.
 - `<target_id>`: [conditionally required] The ID of the sequence the custom template relates to, only required if modelling a complex. If providing a list of custom templates, you can provide a single target ID if they all relate to the same target. Otherwise, you should provide a list of target IDs corresponding to the list of custom templates.
-
 
 #### add_mmseqs_msa.py
 
@@ -237,12 +254,11 @@ mmseqs2msa --input_json <input_json> --output_json <output_json> --templates --n
 ```
 
 - `<input_json>`: Path to the input AlphaFold3 JSON file.
-- `<output_json>`: [optional] Path to the output JSON file (default: `<input_json_stem>`_mmseqs.json).
+- `<output_json>`: [optional] Path to the output JSON file (default: `<input_json_stem>`\_mmseqs.json).
 - `<num_templates>`: [optional] The number of templates to use (default: 20)
 - `<custom_template>`: [optional] Path to a custom template file in mmCIF format or a list of custom templates.
 - `<custom_template_chain>`: [conditionally required] The chain ID of the chain to use in your custom template, only required if using a multi-chain template. If providing a list of custom templates, you will need to provide a list of custom template chains.
 - `<target_id>`: [conditionally required] The ID of the sequence the custom template relates to, only required if modelling a complex. If providing a list of custom templates, you can provide a single target ID if they all relate to the same target. Otherwise, you should provide a list of target IDs corresponding to the list of custom templates.
-
 
 ### Possible Issues
 
