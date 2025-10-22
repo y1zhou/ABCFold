@@ -55,14 +55,13 @@ class ChaiConfig:
         self.fasta = self.workdir / f"{self.run_id}.fasta"
         self.restraints = self.workdir / f"{self.run_id}.restraints"
 
-        self.seq_metadata: dict[str, tuple[str, str]] = self.generate_chai_fasta(
-            self.fasta, self.ccd_lib_dir
-        )
-        self.generate_chai_restraints()
+        # Other metadata
+        self.chain_type: dict[str, str] = {}
+        self.fasta_entries = self.generate_chai_fasta(self.ccd_lib_dir)
+        self.chain_id = self._build_chain_id_mapping(self.fasta_entries)
+        self.restraints_df = self.generate_chai_restraints()
 
-    def generate_chai_fasta(
-        self, ccd_lib_dir: str | Path | None = None
-    ) -> dict[str, tuple[str, str]]:
+    def generate_chai_fasta(self, ccd_lib_dir: str | Path | None = None) -> list[str]:
         """Build Chai-1 style FASTA from ABCFold config.
 
         `ccd_lib_dir` is needed if their are CCD ligands in the input.
@@ -72,8 +71,7 @@ class ChaiConfig:
         in the FASTA file. So the chain IDs in the ABCFold config may not be preserved.
 
         Returns:
-            Mapping from original chain IDs to Chai-assigned chain IDs and entity types:
-                {original_chain_id: (chai_chain_id, entity_type)}
+            List of FASTA entries. This method also modifies self.chain_type_map.
 
         """
         entries: list[str] = []
@@ -113,19 +111,26 @@ class ChaiConfig:
         with open(self.fasta, "w") as f:
             f.write("\n".join(entries) + "\n")
 
-        chai_chain_ids = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        seq_metadata = {}
-        for i, entry in enumerate(entries):
-            entity_type, original_chain_id = entry.splitlines()[0].split("|")
-            seq_metadata[original_chain_id] = (
-                chai_chain_ids[i],
-                entity_type[1:],  # remove '>' from seq_type
-            )
+        return entries
 
-        return seq_metadata
+        # chai_chain_ids = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        # seq_metadata = {}
+        # for i, entry in enumerate(entries):
+        #     entity_type, original_chain_id = entry.splitlines()[0].split("|")
+        #     seq_metadata[original_chain_id] = (
+        #         chai_chain_ids[i],
+        #         entity_type[1:],  # remove '>' from seq_type
+        #     )
 
-    def generate_chai_restraints(self):
-        """Generate Chai-1 style restraints CSV from ABCFold config."""
+        # return seq_metadata
+
+    def generate_chai_restraints(self) -> pd.DataFrame | None:
+        """Generate Chai-1 style restraints CSV from ABCFold config.
+
+        Ref: https://github.com/chaidiscovery/chai-lab/issues/326#issuecomment-2862206725
+        Ref: https://github.com/chaidiscovery/chai-lab/tree/main/examples/covalent_bonds
+        Ref: https://github.com/chaidiscovery/chai-lab/tree/main/examples/restraints
+        """
         if not self.conf.restraints:
             self.restraints = None
             return
@@ -144,28 +149,55 @@ class ChaiConfig:
         ]
         entries = []
         for r in self.conf.restraints:
-            chain1_id, chain1_type = self.seq_metadata[r.atom1.chain_id]
-            chain2_id, chain2_type = self.seq_metadata[r.atom2.chain_id]
-
+            # Get Chai-assigned chain IDs
+            chain1_id = self.chain_id[r.atom1.chain_id]
+            chain2_id = self.chain_id[r.atom2.chain_id]
             if chain1_id == chain2_id:
                 raise ValueError(f"Restraints must be inter-chain for Chai-1, got: {r}")
 
             match r.restraint_type:
                 case RestraintType.Covalent:
                     restraint_type = "covalent"
-
                 case RestraintType.Pocket:
                     restraint_type = "pocket"
                 case RestraintType.Contact:
                     restraint_type = "contact"
                 case _:
                     raise ValueError(f"Unsupported restraint type: {r.restraint_type}")
+
+            res1_idx = self._build_res_idx(
+                restraint_type,
+                self.chain_type[r.atom1.chain_id],
+                r.atom1,
+            )
+            res2_idx = self._build_res_idx(
+                restraint_type,
+                self.chain_type[r.atom2.chain_id],
+                r.atom2,
+            )
+
+            # Special treatment for pocket restraints: swap to put hotspot in chain B
+            if restraint_type == "pocket":
+                if chain2_id == r.boltz_binder_chain:
+                    chain1_id, chain2_id, res1_idx, res2_idx = (
+                        chain2_id,
+                        chain1_id,
+                        None,
+                        res1_idx,
+                    )
+                elif chain1_id == r.boltz_binder_chain:
+                    res1_idx = None
+                else:
+                    raise ValueError(
+                        f"Pocket restraint binder chain ID {r.boltz_binder_chain} "
+                        f"not found in restraint atoms: {r}"
+                    )
             entries.append(
                 (
                     chain1_id,
-                    ...,
+                    res1_idx,
                     chain2_id,
-                    ...,
+                    res2_idx,
                     restraint_type,
                     1.0,
                     0.0,
@@ -176,6 +208,7 @@ class ChaiConfig:
         df = pd.DataFrame(entries).reset_index()
         df.columns = restraint_cols
         df.to_csv(self.restraints, index=False)
+        return df
 
     def generate_chai_msa(self, msa_dir: str | Path):
         """Generate Chai-1 style MSA files."""
@@ -185,14 +218,16 @@ class ChaiConfig:
         """Generate Chai-1 style templates."""
         ...
 
-    @staticmethod
     def _build_fasta_entry(
-        seq_type: str, chain_id: str | list[str], sequence: str
+        self, seq_type: str, chain_id: str | list[str], sequence: str
     ) -> list[str]:
         """Build FASTA entry string."""
         if isinstance(chain_id, list):
+            for c in chain_id:
+                self.chain_type[c] = seq_type
             return [f">{seq_type}|{c}\n{sequence}" for c in chain_id]
         else:
+            self.chain_type[chain_id] = seq_type
             return [f">{seq_type}|{chain_id}\n{sequence}"]
 
     @staticmethod
@@ -210,6 +245,16 @@ class ChaiConfig:
         for mod in modifications:
             seq_list[mod.position - 1] = f"({mod.ccd})"
         return "".join(seq_list)
+
+    @staticmethod
+    def _build_chain_id_mapping(fasta_entries: list[str]) -> dict[str, str]:
+        """Build mapping from original chain IDs to Chai-assigned chain IDs."""
+        chai_chain_ids = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        mapping = {}
+        for i, entry in enumerate(fasta_entries):
+            original_chain_id = entry.splitlines()[0].split("|")[1]
+            mapping[original_chain_id] = chai_chain_ids[i]
+        return mapping
 
     @staticmethod
     def ccd_to_smiles(ccd: str, ccd_lib_dir: str | Path) -> str:
@@ -231,10 +276,14 @@ class ChaiConfig:
         Covalent bond: N436@N (residue), @C1 (ligand)
         Contact: R84, G7
         """
+        # For ligands and glycans, only atom name is used
         if chain_type in {"ligand", "glycan"}:
             return f"@{atom.atom_name}"
-        else:
+
+        if restraint_type == "covalent":
             return f"{atom.residue_name}{atom.residue_idx}@{atom.atom_name}"
+        else:  # contact or pocket
+            return f"{atom.residue_name}{atom.residue_idx}"
 
 
 def run_chai(abcfold_conf_file: str | Path, output_dir: str | Path) -> bool:
