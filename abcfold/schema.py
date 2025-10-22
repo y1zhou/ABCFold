@@ -278,10 +278,9 @@ def write_config(conf: BaseModel, out_file: str, **kwargs):
     out_path = Path(out_file).expanduser().resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if "exclude_unset" not in kwargs:
-        kwargs["exclude_unset"] = True
-    if "exclude_none" not in kwargs:
-        kwargs["exclude_none"] = True
+    for default_arg in ("exclude_unset", "exclude_none", "exclude_computed_fields"):
+        if default_arg not in kwargs:
+            kwargs[default_arg] = True
 
     if out_path.suffix in {".yml", ".yaml"}:
         with open(out_path, "w") as f:
