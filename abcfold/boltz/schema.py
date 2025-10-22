@@ -19,6 +19,7 @@ from abcfold.alphafold3.schema import type_key_serializer, type_key_validator
 from abcfold.schema import (
     ABCFoldConfig,
     Atom,
+    Glycan,
     Ligand,
     Polymer,
     PolymerType,
@@ -80,7 +81,7 @@ class BoltzContactLigand(BaseModel):
 
 def ser_boltz_pocket_contacts(
     contacts: list[BoltzContactResidue | BoltzContactLigand],
-) -> list[list[str, int] | list[str, str]]:
+) -> list[list[str | int] | list[str]]:
     """Serialize list of contact residues/ligands as list of lists."""
     return [contact.model_dump(mode="serialize") for contact in contacts]
 
@@ -276,6 +277,9 @@ def abcfold_to_boltz(conf: ABCFoldConfig) -> BoltzInput:
                 )
         else:
             seq_types[seq.id] = seq.seq_type if isinstance(seq, Polymer) else "ligand"
+
+        if isinstance(seq, Glycan):
+            raise ValueError("Glycans are not yet supported in Boltz input.")
 
         if isinstance(seq, Ligand):
             seqs.append(seq)
