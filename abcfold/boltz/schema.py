@@ -26,9 +26,45 @@ from abcfold.schema import (
     ProteinSeq,
     RestraintType,
 )
-from abcfold.schema import AtomPair as BoltzBond
 from abcfold.schema import Ligand as BoltzLigand
 from abcfold.schema import SequenceModification as BoltzModification
+
+
+class BoltzAtom(Atom):
+    """Schema for atoms in Boltz input.
+
+    Extends Atom with serializer.
+    """
+
+    @model_serializer
+    def serialize_as_list(self) -> list:
+        """Serialize as [entityId, resId, atomName]."""
+        return [self.chain_id, self.residue_idx, self.atom_name]
+
+
+class BoltzBond(BaseModel):
+    """Schema for atom pairs."""
+
+    atom1: BoltzAtom
+    atom2: BoltzAtom
+
+    @classmethod
+    def init_from_list(cls, atom_pair: list[list[str | int]]):
+        """Initialize from [[entityId, resId, atomName]]."""
+        if len(atom_pair) != 2:
+            raise ValueError("Atom pair list must have exactly 2 elements.")
+
+        atom1 = BoltzAtom.init_from_list(atom_pair[0])
+        atom2 = BoltzAtom.init_from_list(atom_pair[1])
+        return cls(atom1=atom1, atom2=atom2)
+
+    @classmethod
+    def init_from_atoms(cls, atom1: Atom, atom2: Atom):
+        """Initialize from [[entityId, resId, atomName]]."""
+        dump_fields = ("chain_id", "residue_idx", "atom_name")
+        atom1 = BoltzAtom(**atom1.model_dump(include=dump_fields))
+        atom2 = BoltzAtom(**atom2.model_dump(include=dump_fields))
+        return cls(atom1=atom1, atom2=atom2)
 
 
 class BoltzPolymer(BaseModel):
@@ -262,35 +298,126 @@ class BoltzInput(BaseModel):
         return cls.model_validate(dat)
 
 
-def abcfold_to_boltz(conf: ABCFoldConfig) -> BoltzInput:
-    """Convert ABCFold config to Boltz input schema."""
+def merge_chai_msa_to_csv(
+    unpaired_msa_file: str | Path | None,
+    paired_msa_file: str | Path | None,
+    msa_id: str,
+    out_dir: str | Path,
+) -> Path:
+    """Merge unpaired and paired MSAs into a single CSV file for Boltz.
+
+    Adapted from Boltz's own MSA processing code: boltz.main.compute_msa
+
+    Args:
+        unpaired_msa_file: Path to unpaired MSA file in A3M format.
+        paired_msa_file: Path to paired MSA file in A3M format.
+        msa_id: Output file name. Boltz uses `{target_id}_{entity_id}.csv`.
+        out_dir: Directory to save the output CSV file.
+
+    """
+    out_dir_path = Path(out_dir).expanduser().resolve()
+    out_dir_path.mkdir(parents=True, exist_ok=True)
+    out_file = out_dir_path / f"{msa_id}.csv"
+
+    # fast fail if unpaired MSA file does not exist
+    if unpaired_msa_file is None:
+        raise ValueError("Unpaired MSA file must be provided.")
+    unpaired_path = Path(unpaired_msa_file).expanduser().resolve()
+    if not unpaired_path.exists():
+        raise FileNotFoundError(f"Unpaired MSA file not found: {unpaired_path}")
+
+    if paired_msa_file is not None:
+        paired_path = Path(paired_msa_file).expanduser().resolve()
+        if not paired_path.exists():
+            raise FileNotFoundError(f"Paired MSA file not found: {paired_path}")
+        with open(paired_path) as f:
+            paired = f.read().strip().splitlines()
+
+        # ignore headers
+        # Boltz also does subsampling here but we skip that for now
+        paired = paired[1::2]
+
+        # set key per row and remove empty sequences
+        keys = [idx for idx, s in enumerate(paired) if s != "-" * len(s)]
+        paired = [s for s in paired if s != "-" * len(s)]
+    else:
+        paired = []
+        keys = []
+
+    # combine paired-unpaired sequences
+    with open(unpaired_path) as f:
+        unpaired = f.read().strip().splitlines()
+
+    unpaired = unpaired[1::2]
+    if paired:
+        # ignore query seq
+        unpaired = unpaired[1:]
+
+    combined_seqs = paired + unpaired
+    combined_keys = keys + [-1] * len(unpaired)
+
+    # Dump to CSV
+    csv_str = ["key,sequence"] + [
+        f"{key},{seq}" for key, seq in zip(combined_keys, combined_seqs, strict=True)
+    ]
+    with open(out_file, "w") as f:
+        f.write("\n".join(csv_str))
+
+    return out_file
+
+
+def abcfold_to_boltz(conf: ABCFoldConfig, msa_dir: str | Path) -> BoltzInput:
+    """Convert ABCFold config to Boltz input schema.
+
+    Args:
+        conf: ABCFold configuration.
+        msa_dir: Directory to save MSA CSV files for Boltz.
+
+    """
     # Sequences
-    seqs = []
-    seq_types = {}
-    templates = []  # Boltz stores templates in a separate field
+    seqs: list[BoltzProtein | BoltzDNA | BoltzRNA | BoltzLigand] = []
+    seq_types: dict[str, str] = {}
+
+    # Boltz stores templates in a separate field
+    templates: list[BoltzStructuralTemplate] = []
+
+    msa_dir_path = Path(msa_dir).expanduser().resolve()
+    msa_dir_path.mkdir(parents=True, exist_ok=True)
     for seq in conf.sequences:
         # Record sequence types for each input chain
+        if isinstance(seq, Glycan):
+            raise ValueError("Glycans are not yet supported in Boltz input.")
+
         if isinstance(seq.id, list):
             for chain_id in seq.id:
                 seq_types[chain_id] = (
                     seq.seq_type.value if isinstance(seq, Polymer) else "ligand"
                 )
         else:
-            seq_types[seq.id] = seq.seq_type if isinstance(seq, Polymer) else "ligand"
+            seq_types[seq.id] = (
+                seq.seq_type.value if isinstance(seq, Polymer) else "ligand"
+            )
 
-        if isinstance(seq, Glycan):
-            raise ValueError("Glycans are not yet supported in Boltz input.")
-
+        # Map ABCFold sequences to Boltz sequences
         if isinstance(seq, Ligand):
             seqs.append(seq)
         elif isinstance(seq, ProteinSeq):
+            if seq.msa_dir is not None:
+                msa_csv_path = merge_chai_msa_to_csv(
+                    seq.unpaired_msa,
+                    seq.paired_msa,
+                    msa_id=seq.seq_hash,
+                    out_dir=msa_dir_path,
+                )
+            else:
+                msa_csv_path = "empty"
             seqs.append(
                 BoltzProtein(
                     id=seq.id,
                     sequence=seq.sequence,
                     modifications=seq.modifications,
                     cyclic=seq.cyclic,
-                    msa=seq.unpaired_msa,  # TODO: update MSA handling, see boltz.main.compute_msa
+                    msa=str(msa_csv_path),
                 )
             )
 
@@ -318,7 +445,6 @@ def abcfold_to_boltz(conf: ABCFoldConfig) -> BoltzInput:
                         threshold=tmpl.boltz_template_threshold,
                     )
                 )
-            # TODO: map potential templates
         elif seq.seq_type == PolymerType.DNA:
             seqs.append(
                 BoltzDNA(
@@ -347,10 +473,16 @@ def abcfold_to_boltz(conf: ABCFoldConfig) -> BoltzInput:
             return BoltzContactResidue(id=elem.chain_id, residue_idx=elem.residue_idx)
 
     constraints = []
-    for restraint in conf.restraints:
+    for restraint in conf.restraints or []:
         if restraint.restraint_type == RestraintType.Covalent:
-            constraints.append(BoltzBond(atom1=restraint.atom1, atom2=restraint.atom2))
+            constraints.append(
+                BoltzBond.init_from_atoms(atom1=restraint.atom1, atom2=restraint.atom2)
+            )
         elif restraint.restraint_type == RestraintType.Pocket:
+            if restraint.boltz_binder_chain is None:
+                raise ValueError(
+                    f"boltz_binder_chain must be specified for pocket restraints: {restraint}"
+                )
             constraints.append(
                 BoltzPocket(
                     binder=restraint.boltz_binder_chain,

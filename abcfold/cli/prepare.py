@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 
+from abcfold.boltz.schema import abcfold_to_boltz
 from abcfold.schema import add_msa_to_config, load_abcfold_config, write_config
 
 app = typer.Typer()
@@ -63,7 +64,7 @@ def prepare_af3(
     ],
 ):
     """Prepare JSON and MSA files for AF3."""
-    raise NotImplementedError
+    raise NotImplementedError("AF3 is very low priority. Please use `abcfold` instead.")
 
 
 @app.command(name="chai")
@@ -101,7 +102,16 @@ def prepare_boltz(
     ],
 ):
     """Prepare YAML and MSA files for Boltz."""
-    raise NotImplementedError
+    conf_path = conf_file.expanduser().resolve()
+    conf = load_abcfold_config(conf_path)
+    out_path = out_dir.expanduser().resolve()
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    boltz_conf = abcfold_to_boltz(conf, out_path / "boltz_msa")
+    run_id = conf_path.stem
+    boltz_yaml_file = out_path / f"{run_id}.yaml"
+    write_config(boltz_conf, boltz_yaml_file)
+    print(f"Boltz config written to: {boltz_yaml_file}")
 
 
 if __name__ == "__main__":

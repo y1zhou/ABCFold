@@ -19,7 +19,7 @@ def run_boltz(abcfold_conf_file: str | Path, output_dir: str | Path) -> bool:
     workdir = Path(output_dir).expanduser().resolve()
     workdir.mkdir(parents=True, exist_ok=True)
 
-    boltz_conf = abcfold_to_boltz(conf)
+    boltz_conf = abcfold_to_boltz(conf, workdir / "boltz_msa")
     run_id = input_conf_file.stem
     boltz_yaml_file = workdir / f"{run_id}.yaml"
     write_config(boltz_conf, boltz_yaml_file)
