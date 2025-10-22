@@ -24,6 +24,12 @@ def search_msa(
             help="Output directory for prepared files.",
         ),
     ],
+    chains: Annotated[
+        str | None,
+        typer.Option(
+            help="Chains to process, e.g., A,B,C. Defaults to all protein chains."
+        ),
+    ] = None,
     search_templates: Annotated[
         bool, typer.Option(help="Whether to search for templates.", flag_value=True)
     ] = True,
@@ -34,7 +40,8 @@ def search_msa(
     out_path = out_dir.expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
 
-    conf = add_msa_to_config(conf, out_path / "msas", search_templates)
+    search_chains = set(chains.split(",")) if chains is not None else None
+    conf = add_msa_to_config(conf, out_path / "msas", search_chains, search_templates)
     new_conf_path = out_path / f"{conf_path.stem}.yaml"
     write_config(conf, new_conf_path)
     print(f"Updated config written to: {new_conf_path}")

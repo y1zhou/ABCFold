@@ -17,7 +17,7 @@ from pydantic import (
 )
 
 
-def type_key_serializer(seq: BaseModel, type_keys: dict[BaseModel, str]):
+def type_key_serializer(seq: BaseModel, type_keys: dict[type[BaseModel], str]):
     """Serialize sequences as dict with type key."""
     if type(seq) not in type_keys:
         raise TypeError(f"Unsupported sequence type: {type(seq)}")
@@ -250,7 +250,7 @@ class ABCFoldConfig(BaseModel):
     ]
 
 
-def load_abcfold_config(conf_file: str) -> ABCFoldConfig:
+def load_abcfold_config(conf_file: str | Path) -> ABCFoldConfig:
     """Load ABCFold config from a file."""
     import yaml
 
@@ -266,7 +266,7 @@ def load_abcfold_config(conf_file: str) -> ABCFoldConfig:
         raise ValueError("Unsupported config file format. Use .yaml, .yml, or .json")
 
 
-def write_config(conf: BaseModel, out_file: str, **kwargs):
+def write_config(conf: BaseModel, out_file: str | Path, **kwargs):
     """Write config to a file."""
     import yaml
 
@@ -293,11 +293,26 @@ def write_config(conf: BaseModel, out_file: str, **kwargs):
 
 
 def add_msa_to_config(
-    conf: ABCFoldConfig, out_dir: str | Path, search_templates: bool = True
+    conf: ABCFoldConfig,
+    out_dir: str | Path,
+    chains: set[str] | None = None,
+    search_templates: bool = True,
 ) -> ABCFoldConfig:
-    """Add MSA paths to protein sequences in the config."""
+    """Add MSA paths to protein sequences in the config.
+
+    Args:
+        conf: ABCFoldConfig object.
+        out_dir: Output directory to store MSA files.
+        chains: Set of chain IDs to process. If None, process all protein chains.
+        search_templates: Whether to search for templates.
+
+    """
+    if chains is None:
+        chains = set(seq.id for seq in conf.sequences if isinstance(seq, ProteinSeq))
     protein_seqs = [
-        seq.sequence for seq in conf.sequences if isinstance(seq, ProteinSeq)
+        seq.sequence
+        for seq in conf.sequences
+        if isinstance(seq, ProteinSeq) and seq.id in chains
     ]
     out_path = Path(out_dir).expanduser().resolve()
     generate_colabfold_msas(
@@ -314,6 +329,10 @@ def add_msa_to_config(
 
     for i, seq in enumerate(conf.sequences):
         if not isinstance(seq, ProteinSeq):
+            continue
+        if isinstance(seq.id, str) and seq.id not in chains:
+            continue
+        elif isinstance(seq.id, list) and not any(c in chains for c in seq.id):
             continue
 
         conf.sequences[i].msa_dir = str(out_path)
