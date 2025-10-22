@@ -25,7 +25,7 @@ class ChaiConfig:
     def __init__(
         self,
         conf: ABCFoldConfig,
-        workdir: str | Path,
+        work_dir: str | Path,
         run_id: str,
         ccd_lib_dir: str | Path | None = None,
     ):
@@ -33,13 +33,13 @@ class ChaiConfig:
 
         Args:
             conf (ABCFoldConfig): ABCFold configuration object.
-            workdir (str | Path): Output directory for Chai-1 inputs.
+            work_dir (str | Path): Output directory for Chai-1 inputs.
             run_id (str): Unique identifier for the run.
             ccd_lib_dir: Boltz cache directory for CCD ligands.
 
         """
         self.conf = conf
-        self.workdir = Path(workdir).expanduser().resolve()
+        self.work_dir = Path(work_dir).expanduser().resolve()
         self.run_id = run_id
         self.ccd_lib_dir = (
             Path(ccd_lib_dir).expanduser().resolve()
@@ -47,13 +47,14 @@ class ChaiConfig:
             else None
         )
 
-        self.workdir.mkdir(parents=True, exist_ok=True)
+        self.work_dir.mkdir(parents=True, exist_ok=True)
 
-    def generate_chai_inputs(self) -> dict[str, tuple[str, str]]:
+    def generate_chai_inputs(self):
         """Generate all Chai-1 input files."""
         # File paths
-        self.fasta = self.workdir / f"{self.run_id}.fasta"
-        self.restraints = self.workdir / f"{self.run_id}.restraints"
+        self.fasta = self.work_dir / f"{self.run_id}.fasta"
+        self.restraints = self.work_dir / f"{self.run_id}.restraints"
+        self.msa = self.work_dir / "msas"
 
         # Other metadata
         self.chain_type: dict[str, str] = {}
@@ -290,7 +291,7 @@ def run_chai(abcfold_conf_file: str | Path, output_dir: str | Path) -> bool:
     """Run Chai-1 using the ABCFold config file.
 
     Returns:
-        Bool: True if the Chai-1 run was successful, False otherwise.
+        True if the Chai-1 run was successful, False otherwise.
 
     """
     input_conf_file = Path(abcfold_conf_file).expanduser().resolve()

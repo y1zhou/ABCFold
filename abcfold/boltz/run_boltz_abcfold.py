@@ -77,11 +77,11 @@ def generate_boltz_command(
     num_trunk_recycles: int,
     num_diffn_timesteps: int,
     num_diffn_samples: int,
-    additional_args: list[str] = [],
+    additional_args: list[str] | None = None,
     seed: int = 42,
 ) -> list:
     """Generate the Boltz command."""
-    return [
+    cmd = [
         "boltz",
         "predict",
         str(input_yaml),
@@ -95,5 +95,7 @@ def generate_boltz_command(
         str(num_diffn_samples),
         "--seed",
         str(seed),
-        *additional_args,
     ]
+    if additional_args is not None:
+        cmd.extend(additional_args)
+    return cmd
