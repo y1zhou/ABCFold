@@ -36,6 +36,7 @@ dependencies = [
     "jinja2",
     "pyarrow==19.0.1",
     "pydantic>=2.12.3",
+    "typer>=0.20.0",
 ]
 
 [project.urls]
@@ -69,6 +70,7 @@ abcfold = ["data/config.ini"]
 
 [project.scripts]
 abcfold = "abcfold.abcfold:main"
+abcfold2 = "abcfold.cli.main:app"
 mmseqs2msa = "abcfold.scripts.add_mmseqs_msa:main"
 custom_templates = "abcfold.scripts.add_custom_template:main"
 
@@ -78,7 +80,8 @@ extend-ignore = ["E203"]
 
 [tool.ruff]
 line-length = 88
-select = ["E", "F", "W"]
+select = ["D", "E", "F", "W", "I", "S", "UP", "B"]
+extend-ignore = ["E402", "E501", "F401", "F841", "S101"]
 
 [tool.mypy]
 python_version = "3.10"
