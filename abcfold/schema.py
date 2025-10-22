@@ -259,11 +259,17 @@ def load_abcfold_config(conf_file: str | Path) -> ABCFoldConfig:
         raise FileNotFoundError(f"Config file not found: {conf_path}")
     if conf_path.suffix in {".yml", ".yaml"}:
         with open(conf_path) as f:
-            return ABCFoldConfig.model_validate(yaml.safe_load(f))
+            conf = ABCFoldConfig.model_validate(yaml.safe_load(f))
     elif conf_path.suffix == ".json":
-        return ABCFoldConfig.model_validate_json(conf_path.read_bytes())
+        conf = ABCFoldConfig.model_validate_json(conf_path.read_bytes())
     else:
         raise ValueError("Unsupported config file format. Use .yaml, .yml, or .json")
+
+    for i, seq in enumerate(conf.sequences):
+        if isinstance(seq, Polymer) and seq.seq_type == PolymerType.Protein:
+            conf.sequences[i] = ProteinSeq(**seq.model_dump())
+
+    return conf
 
 
 def write_config(conf: BaseModel, out_file: str | Path, **kwargs):
@@ -315,6 +321,7 @@ def add_msa_to_config(
         if isinstance(seq, ProteinSeq) and seq.id in chains
     ]
     out_path = Path(out_dir).expanduser().resolve()
+    out_path.mkdir(parents=True, exist_ok=True)
     generate_colabfold_msas(
         protein_seqs=protein_seqs,
         msa_dir=out_path,

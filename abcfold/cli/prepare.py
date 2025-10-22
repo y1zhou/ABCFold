@@ -41,7 +41,7 @@ def search_msa(
     out_path.mkdir(parents=True, exist_ok=True)
 
     search_chains = set(chains.split(",")) if chains is not None else None
-    conf = add_msa_to_config(conf, out_path / "msas", search_chains, search_templates)
+    conf = add_msa_to_config(conf, out_path, search_chains, search_templates)
     new_conf_path = out_path / f"{conf_path.stem}.yaml"
     write_config(conf, new_conf_path)
     print(f"Updated config written to: {new_conf_path}")
