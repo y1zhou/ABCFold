@@ -12,7 +12,6 @@ from pydantic import (
     NonNegativeInt,
     PositiveInt,
     computed_field,
-    model_serializer,
     model_validator,
 )
 
@@ -39,36 +38,24 @@ class Atom(BaseModel):
     chain_id: str  # corresponding to the `id` field for the entity
     residue_idx: PositiveInt  # 1-based residue index within the chain
     atom_name: str  # e.g., "CA", "N", "C", etc. Follow rdkit for ligands
-    residue_name: str | None  # Chai requires this for covalent bonds
-
-    @model_serializer
-    def serialize_as_list(self) -> list:
-        """Serialize as [entityId, resId, atomName]."""
-        return [self.chain_id, self.residue_idx, self.atom_name]
+    residue_name: str | None  # Chai requires this for restraints on proteins
 
     @classmethod
-    def init_from_list(cls, atom: list):
+    def init_from_list(cls, atom: list[str | int]):
         """Initialize from [entityId, resId, atomName]."""
-        if len(atom) != 3:
-            raise ValueError("Atom list must have exactly 3 elements.")
-        return cls(entityId=atom[0], residueId=atom[1], atomName=atom[2])
-
-
-class AtomPair(BaseModel):
-    """Schema for atom pairs."""
-
-    atom1: Atom
-    atom2: Atom
-
-    @classmethod
-    def init_from_list(cls, atom_pair: list):
-        """Initialize from [[entityId, resId, atomName]]."""
-        if len(atom_pair) != 2:
-            raise ValueError("Atom pair list must have exactly 2 elements.")
-
-        atom1 = Atom.init_from_list(atom_pair[0])
-        atom2 = Atom.init_from_list(atom_pair[1])
-        return cls(atom1=atom1, atom2=atom2)
+        if len(atom) == 3:
+            return cls(chain_id=atom[0], residue_idx=atom[1], atom_name=atom[2])
+        elif len(atom) == 4:
+            return cls(
+                chain_id=atom[0],
+                residue_idx=atom[1],
+                atom_name=atom[2],
+                residue_name=atom[3],
+            )
+        else:
+            raise ValueError(
+                "Atom list must have 3 elements and an optional residue_name."
+            )
 
 
 class SequenceModification(BaseModel):

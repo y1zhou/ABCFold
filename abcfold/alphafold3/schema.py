@@ -14,7 +14,7 @@ from pydantic import (
     model_validator,
 )
 
-from abcfold.schema import AtomPair, type_key_serializer, type_key_validator
+from abcfold.schema import Atom, type_key_serializer, type_key_validator
 
 
 class AF3ProteinModification(BaseModel):
@@ -154,13 +154,46 @@ class AF3Ligand(BaseModel):
         return self
 
 
-class AF3BondPair(AtomPair):
+class AF3Atom(Atom):
+    """Schema for atoms in AlphaFold3 input.
+
+    Extends Atom with serializer.
+    """
+
+    @model_serializer
+    def serialize_as_list(self) -> list:
+        """Serialize as [entityId, resId, atomName]."""
+        return [self.chain_id, self.residue_idx, self.atom_name]
+
+
+class AF3BondPair(BaseModel):
     """Schema for bonded atom pairs."""
+
+    atom1: AF3Atom
+    atom2: AF3Atom
 
     @model_serializer
     def serialize_as_list(self) -> list:
         """Serialize as [atom1, atom2]."""
         return [self.atom1, self.atom2]
+
+    @classmethod
+    def init_from_list(cls, atom_pair: list[list[str | int]]):
+        """Initialize from [[entityId, resId, atomName]]."""
+        if len(atom_pair) != 2:
+            raise ValueError("Atom pair list must have exactly 2 elements.")
+
+        atom1 = AF3Atom.init_from_list(atom_pair[0])
+        atom2 = AF3Atom.init_from_list(atom_pair[1])
+        return cls(atom1=atom1, atom2=atom2)
+
+    @classmethod
+    def init_from_atoms(cls, atom1: Atom, atom2: Atom):
+        """Initialize from [[entityId, resId, atomName]]."""
+        dump_fields = ("chain_id", "residue_idx", "atom_name")
+        atom1 = AF3Atom(**atom1.model_dump(include=dump_fields))
+        atom2 = AF3Atom(**atom2.model_dump(include=dump_fields))
+        return cls(atom1=atom1, atom2=atom2)
 
 
 AF3_SEQ_TYPE = {
