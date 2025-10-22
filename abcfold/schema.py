@@ -1,12 +1,17 @@
 """Schemas for ABCFold input configs."""
 
 from enum import Enum
+from functools import cached_property
 from pathlib import Path
 
+from chai_lab.data.dataset.msas.colabfold import generate_colabfold_msas
+from chai_lab.data.parsing.msas.aligned_pqt import hash_sequence
+from chai_lab.data.parsing.templates.m8 import parse_m8_file
 from pydantic import (
     BaseModel,
     NonNegativeInt,
     PositiveInt,
+    computed_field,
     model_serializer,
     model_validator,
 )
@@ -112,13 +117,44 @@ class Polymer(BaseModel):
     description: str | None = None  # comment describing the chain
     cyclic: bool = False  # Boltz only
 
+    @computed_field
+    @cached_property
+    def seq_hash(self) -> str:
+        """Compute the Chai-style sequence hash."""
+        return hash_sequence(self.sequence)
+
 
 class ProteinSeq(Polymer):
     """Schema for individual protein sequences."""
 
-    unpaired_msa: str | None = None
-    paired_msa: str | None = None
+    msa_dir: str | None = None
     templates: list[StructuralTemplate] | None = None
+
+    @computed_field
+    @property
+    def unpaired_msa(self) -> str | None:
+        """Get path to unpaired MSA file."""
+        if self.msa_dir is None:
+            return None
+
+        return str(
+            Path(self.msa_dir).expanduser().resolve()
+            / "a3ms"
+            / f"{self.seq_hash}.single.a3m"
+        )
+
+    @computed_field
+    @property
+    def paired_msa(self) -> str | None:
+        """Get path to paired MSA file."""
+        if self.msa_dir is None:
+            return None
+
+        return str(
+            Path(self.msa_dir).expanduser().resolve()
+            / "a3ms"
+            / f"{self.seq_hash}.pair.a3m"
+        )
 
 
 class Ligand(BaseModel):
@@ -255,3 +291,32 @@ def write_config(conf: BaseModel, out_file: str, **kwargs):
             f.write(conf.model_dump_json(indent=2, **kwargs))
     else:
         raise ValueError("Unsupported config file format. Use .yaml, .yml, or .json")
+
+
+def add_msa_to_config(
+    conf: ABCFoldConfig, out_dir: str | Path, search_templates: bool = True
+) -> ABCFoldConfig:
+    """Add MSA paths to protein sequences in the config."""
+    protein_seqs = [
+        seq.sequence for seq in conf.sequences if isinstance(seq, ProteinSeq)
+    ]
+    out_path = Path(out_dir).expanduser().resolve()
+    generate_colabfold_msas(
+        protein_seqs=protein_seqs,
+        msa_dir=out_path,
+        msa_server_url="https://api.colabfold.com",
+        search_templates=search_templates,
+        write_a3m_to_msa_dir=True,
+    )
+    if search_templates:
+        templates_path = out_path / "all_chain_templates.m8"
+        templates_df = parse_m8_file(templates_path)
+        # TODO: fetch cif templates and add to config
+
+    for i, seq in enumerate(conf.sequences):
+        if not isinstance(seq, ProteinSeq):
+            continue
+
+        conf.sequences[i].msa_dir = str(out_path)
+
+    return conf

@@ -286,7 +286,7 @@ def abcfold_to_boltz(conf: ABCFoldConfig) -> BoltzInput:
                     sequence=seq.sequence,
                     modifications=seq.modifications,
                     cyclic=seq.cyclic,
-                    msa=seq.unpaired_msa,
+                    msa=seq.unpaired_msa,  # TODO: update MSA handling, see boltz.main.compute_msa
                 )
             )
 
