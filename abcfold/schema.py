@@ -14,6 +14,9 @@ from pydantic import (
     computed_field,
     model_validator,
 )
+from tqdm import tqdm
+
+from abcfold.scripts.fetch_rcsb import RCSBDownloader
 
 
 def type_key_serializer(seq: BaseModel, type_keys: dict[type[BaseModel], str]):
@@ -277,7 +280,9 @@ def write_config(conf: BaseModel, out_file: str | Path, **kwargs):
 
     if out_path.suffix in {".yml", ".yaml"}:
         with open(out_path, "w") as f:
-            yaml.safe_dump(conf.model_dump(**kwargs), f, sort_keys=False)
+            yaml.safe_dump(
+                conf.model_dump(**kwargs), f, sort_keys=False, default_flow_style=None
+            )
     elif out_path.suffix == ".json":
         with open(out_path, "w") as f:
             f.write(conf.model_dump_json(indent=2, **kwargs))
@@ -290,6 +295,8 @@ def add_msa_to_config(
     out_dir: str | Path,
     chains: set[str] | None = None,
     search_templates: bool = True,
+    fetch_templates: bool = True,
+    template_cache_dir: Path | None = None,
 ) -> ABCFoldConfig:
     """Add MSA paths to protein sequences in the config.
 
@@ -298,29 +305,77 @@ def add_msa_to_config(
         out_dir: Output directory to store MSA files.
         chains: Set of chain IDs to process. If None, process all protein chains.
         search_templates: Whether to search for templates.
+        fetch_templates: Whether to fetch mmCIF templates from RCSB.
+        template_cache_dir: Directory to cache fetched templates. Defaults to
+            ~/.cache/rcsb/ if not set.
 
     """
+    # Figure out which protein sequences to process
     if chains is None:
-        chains = set(seq.id for seq in conf.sequences if isinstance(seq, ProteinSeq))
+        chains = {
+            c
+            for seq in conf.sequences
+            if isinstance(seq, ProteinSeq)
+            for c in (seq.id if isinstance(seq.id, list) else [seq.id])
+        }
     protein_seqs = [
         seq.sequence
         for seq in conf.sequences
-        if isinstance(seq, ProteinSeq) and seq.id in chains
+        if isinstance(seq, ProteinSeq)
+        and any(c in chains for c in (seq.id if isinstance(seq.id, list) else [seq.id]))
     ]
+
+    # Generate MSAs using ColabFold API
     out_path = Path(out_dir).expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
-    generate_colabfold_msas(
+    _ = generate_colabfold_msas(
         protein_seqs=protein_seqs,
         msa_dir=out_path,
         msa_server_url="https://api.colabfold.com",
         search_templates=search_templates,
         write_a3m_to_msa_dir=True,
     )
-    if search_templates:
+
+    # Fetch templates from RCSB if needed
+    if fetch_templates:
+        template_cache = (
+            Path("~/.cache/rcsb") if template_cache_dir is None else template_cache_dir
+        )
+        template_cache = template_cache.expanduser().resolve()
+        template_cache.mkdir(parents=True, exist_ok=True)
+        dl = RCSBDownloader(template_cache, make_subdir=True)
+
         templates_path = out_path / "all_chain_templates.m8"
         templates_df = parse_m8_file(templates_path)
-        # TODO: fetch cif templates and add to config
 
+        template_map: dict[str, list[StructuralTemplate]] = {}
+        hash_to_chains: dict[str, list[str]] = {
+            seq.seq_hash: (seq.id if isinstance(seq.id, list) else [seq.id])
+            for seq in conf.sequences
+            if isinstance(seq, ProteinSeq)
+        }
+        for _, r in tqdm(
+            templates_df.iterrows(),
+            total=templates_df.shape[0],
+            desc="Fetching templates",
+        ):
+            template_pdb_id, template_chain_id = r["subject_id"].split("_")
+            template_cif_path = dl.fetch_mmcif(template_pdb_id)
+
+            if r["query_id"] not in template_map:
+                template_map[r["query_id"]] = []
+            template_map[r["query_id"]].append(
+                StructuralTemplate(
+                    path=str(template_cif_path),
+                    query_idx=list(range(r["query_start"] - 1, r["query_end"])),
+                    template_idx=list(range(r["subject_start"] - 1, r["subject_end"])),
+                    query_chains=hash_to_chains[r["query_id"]],
+                    template_chains=[template_chain_id],
+                )
+            )
+
+    # Update config with MSA paths and templates
+    (out_path / "templates").mkdir(parents=True, exist_ok=True)
     for i, seq in enumerate(conf.sequences):
         if not isinstance(seq, ProteinSeq):
             continue
@@ -330,5 +385,17 @@ def add_msa_to_config(
             continue
 
         conf.sequences[i].msa_dir = str(out_path)
+
+        if seq.seq_hash in template_map:
+            custom_templates = seq.templates or []
+            conf.sequences[i].templates = custom_templates + template_map[seq.seq_hash]
+
+            # Soft link all templates to out-dir/templates
+            for j, t in enumerate(conf.sequences[i].templates):
+                template_path = Path(t.path)
+                link_path = out_path / "templates" / template_path.name
+                if not link_path.exists():
+                    link_path.symlink_to(template_path)
+                conf.sequences[i].templates[j].path = str(link_path)
 
     return conf

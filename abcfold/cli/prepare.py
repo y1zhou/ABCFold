@@ -34,6 +34,16 @@ def search_msa(
     search_templates: Annotated[
         bool, typer.Option(help="Whether to search for templates.", flag_value=True)
     ] = True,
+    fetch_templates: Annotated[
+        bool,
+        typer.Option(help="Whether to fetch templates from RCSB.", flag_value=True),
+    ] = True,
+    template_cache_dir: Annotated[
+        Path | None,
+        typer.Option(
+            help="Directory to cache fetched templates. Defaults to ~/.cache/rcsb/.",
+        ),
+    ] = None,
 ):
     """Query MSA and template files from ColabFold for all protein sequences."""
     conf_path = conf_file.expanduser().resolve()
@@ -42,7 +52,14 @@ def search_msa(
     out_path.mkdir(parents=True, exist_ok=True)
 
     search_chains = set(chains.split(",")) if chains is not None else None
-    conf = add_msa_to_config(conf, out_path, search_chains, search_templates)
+    conf = add_msa_to_config(
+        conf,
+        out_path,
+        search_chains,
+        search_templates,
+        fetch_templates,
+        template_cache_dir,
+    )
     new_conf_path = out_path / f"{conf_path.stem}.yaml"
     write_config(conf, new_conf_path)
     print(f"Updated config written to: {new_conf_path}")
