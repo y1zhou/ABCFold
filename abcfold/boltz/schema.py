@@ -168,6 +168,14 @@ class BoltzStructuralTemplate(BaseModel):
             raise ValueError("Exactly one of cif or pdb must be provided.")
         return self
 
+    @model_validator(mode="after")
+    def check_force_fields(self):
+        """Ensure that threshold is set when force==True."""
+        if self.force and self.threshold is None:
+            raise ValueError("threshold must be set when force is set to True.")
+
+        return self
+
 
 class BoltzAffinity(BaseModel):
     """Schema for affinity prediction in Boltz output."""
