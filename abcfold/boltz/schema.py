@@ -435,20 +435,23 @@ def abcfold_to_boltz(conf: ABCFoldConfig, msa_dir: str | Path) -> BoltzInput:
             for tmpl in seq.templates:
                 tmpl_path = Path(tmpl.path).expanduser().resolve()
                 cif_path, pdb_path = None, None
-                if tmpl_path.suffix.lower() in {".cif", ".cif.gz"}:
-                    cif_path = str(tmpl_path)
-                elif tmpl_path.suffix.lower() in {".pdb", ".pdb.gz"}:
-                    pdb_path = str(tmpl_path)
-                else:
-                    raise ValueError(
-                        f"Unsupported template file format: {tmpl_path.suffix}"
-                    )
+                match "".join(tmpl_path.suffixes[-2:]).lower():
+                    case ".cif" | ".cif.gz":
+                        cif_path = str(tmpl_path)
+                    case ".pdb" | ".pdb.gz":
+                        pdb_path = str(tmpl_path)
+                    case _:
+                        raise ValueError(
+                            f"Unsupported template file format: {tmpl_path}"
+                        )
                 templates.append(
+                    # TODO: Boltz uses gemmi.structure.entities instead of subchains
+                    # See boltz.data.parse.mmcif.parse_mmcif
                     BoltzStructuralTemplate(
                         cif=cif_path,
                         pdb=pdb_path,
                         chain_id=tmpl.query_chains,
-                        template_id=tmpl.template_chains,
+                        # template_id=tmpl.template_chains,
                         force=tmpl.enable_boltz_force,
                         threshold=tmpl.boltz_template_threshold,
                     )

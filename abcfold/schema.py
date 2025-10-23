@@ -354,12 +354,14 @@ def add_msa_to_config(
             for seq in conf.sequences
             if isinstance(seq, ProteinSeq)
         }
+        # Enable multithreading here
         for _, r in tqdm(
             templates_df.iterrows(),
             total=templates_df.shape[0],
             desc="Fetching templates",
         ):
             template_pdb_id, template_chain_id = r["subject_id"].split("_")
+            template_pdb_id = template_pdb_id.upper()
             template_cif_path = dl.fetch_mmcif(template_pdb_id)
 
             if r["query_id"] not in template_map:

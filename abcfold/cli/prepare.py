@@ -25,6 +25,15 @@ def search_msa(
             help="Output directory for prepared files.",
         ),
     ],
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Whether to overwrite existing MSA and template files.",
+            flag_value=True,
+        ),
+    ] = False,
     chains: Annotated[
         str | None,
         typer.Option(
@@ -45,21 +54,29 @@ def search_msa(
         ),
     ] = None,
 ):
-    """Query MSA and template files from ColabFold for all protein sequences."""
+    """Query MSA and template files from ColabFold for all protein sequences.
+
+    The generated files can be used by Chai directly.
+    """
     conf_path = conf_file.expanduser().resolve()
     conf = load_abcfold_config(conf_path)
     out_path = out_dir.expanduser().resolve()
+    if force:
+        import shutil
+
+        shutil.rmtree(out_path, ignore_errors=True)
     out_path.mkdir(parents=True, exist_ok=True)
 
     search_chains = set(chains.split(",")) if chains is not None else None
     conf = add_msa_to_config(
         conf,
-        out_path,
+        out_path / "msa",
         search_chains,
         search_templates,
         fetch_templates,
         template_cache_dir,
     )
+    print(f"MSA files generated in: {out_path / 'msa'}")
     new_conf_path = out_path / f"{conf_path.stem}.yaml"
     write_config(conf, new_conf_path)
     print(f"Updated config written to: {new_conf_path}")
