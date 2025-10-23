@@ -6,36 +6,36 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from abcfold.boltz.schema import abcfold_to_boltz
-from abcfold.schema import load_abcfold_config, write_config
+from abcfold.schema import ABCFoldConfig
 
 logger = logging.getLogger("logger")
 
 
-def run_boltz(abcfold_conf_file: str | Path, output_dir: str | Path) -> bool:
+def run_boltz(
+    abcfold_conf: ABCFoldConfig,
+    boltz_yaml_file: str | Path,
+    output_dir: str | Path,
+    run_id: str,
+) -> bool:
     """Run Boltz using the ABCFold config file."""
-    input_conf_file = Path(abcfold_conf_file).expanduser().resolve()
-    conf = load_abcfold_config(input_conf_file)
     workdir = Path(output_dir).expanduser().resolve()
-    workdir.mkdir(parents=True, exist_ok=True)
-
-    boltz_conf = abcfold_to_boltz(conf, workdir / "boltz_msa")
-    run_id = input_conf_file.stem
-    boltz_yaml_file = workdir / f"{run_id}.yaml"
-    write_config(boltz_conf, boltz_yaml_file)
-
     log_dir = workdir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    for seed in conf.seeds:
+
+    boltz_yaml_file = Path(boltz_yaml_file).expanduser().resolve()
+    if not boltz_yaml_file.exists():
+        raise FileNotFoundError(f"Boltz config file not found: {boltz_yaml_file}")
+
+    for seed in abcfold_conf.seeds:
         logger.info(f"Running Boltz using seed: {seed}")
         cmd = generate_boltz_command(
             boltz_yaml_file,
-            workdir / "output",
-            num_trunk_recycles=conf.num_trunk_recycles,
-            num_diffn_timesteps=conf.num_diffn_timesteps,
-            num_diffn_samples=conf.num_diffn_samples,
+            workdir,
+            num_trunk_recycles=abcfold_conf.num_trunk_recycles,
+            num_diffn_timesteps=abcfold_conf.num_diffn_timesteps,
+            num_diffn_samples=abcfold_conf.num_diffn_samples,
             seed=seed,
-            additional_args=conf.boltz_additional_cli_args,
+            additional_args=abcfold_conf.boltz_additional_cli_args,
         )
 
         log_path = log_dir / f"{run_id}_boltz_seed{seed}.log"
@@ -46,8 +46,9 @@ def run_boltz(abcfold_conf_file: str | Path, output_dir: str | Path) -> bool:
             now = time.time()
             log_file.write(f"Time: {str(datetime.now(UTC))}\n")
             log_file.write(f"Running command: {' '.join(cmd)}\n\n")
+            logger.info(f"Saving logs to {log_path}")
 
-            logger.debug(f"Running command: {' '.join(cmd)}\nSaving log to {log_path}")
+            logger.debug(f"Running command: {' '.join(cmd)}")
             stdout = ""
             while (buffered_output := p.stdout.readline()) != "" or p.poll() is None:
                 stdout += buffered_output
@@ -66,7 +67,7 @@ def run_boltz(abcfold_conf_file: str | Path, output_dir: str | Path) -> bool:
                 logger.error("Boltz ran out of memory")
                 return False
 
-    logger.info("Boltz run complete")
+    logger.info(f"Boltz run complete: {run_id}")
     logger.info(f"Output files are in {workdir}")
     return True
 
