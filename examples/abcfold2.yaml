@@ -1,0 +1,44 @@
+sequences:
+  - seq_type: protein
+    id: A
+    sequence: QIQLVQSGPELKKPGETVKISCTTSGYTFTNYGLNWVKQAPGKGFKWMAWINTYTGEPTYADDFKGRFAFSLETSASTTYLQINNLKNEDMSTYFCARSGYYDGLKAMDYWGQGTSVTVSSAKTTPPSVYPLAPGSAAQTNSMVTLGCLVKGYFPEPVTVTWNSGSLSSGVHTFPAVLQSDLYTLSSSVTVPSSTWPSETVTCNVAHPASSTKVDKKIVPRDC
+    modifications:
+      - ccd: SEP
+        position: 7
+    description: VH
+  - seq_type: protein
+    id: B
+    sequence: DVLMIQTPLSLPVSLGDQASISCRSSQSLIHINGNTYLEWYLQKPGQSPKLLIYKVSNRFSGVPDRFSGSGSGTDFTLKISRVEAEDLGVYYCFQGSHVPFTFGAGTKLELKRADAAPTVSIFPPSSEQLTSGGASVVCFLNNFYPKDINVKWKIDGSERQNGVLNSWTDQDSKDSTYSMSSTLTLTKDEYERHNSYTCEATHKTSTSPIVKSFNRNECVY
+    description: VL
+  - id: C
+    smiles: CC(=O)OC1=CC=CC=C1C(=O)O
+    description: Aspirin
+restraints:
+  - restraint_type: contact
+    atom1:
+      chain_id: A
+      residue_name: V
+      residue_idx: 37
+      atom_name: CA
+    atom2:
+      chain_id: B
+      residue_name: F
+      residue_idx: 103
+      atom_name: CA
+    max_distance: 20.0
+  - restraint_type: pocket
+    atom1:
+      chain_id: A
+      residue_name: X
+      residue_idx: 9999
+      atom_name: CA
+    atom2:
+      chain_id: B
+      residue_name: Y
+      residue_idx: 41
+      atom_name: CA
+    max_distance: 20.0
+    boltz_binder_chain: A
+seeds:
+  - 42
+  - 1764
