@@ -20,7 +20,7 @@ from abcfold.schema import (
     SequenceModification,
 )
 
-logger = logging.getLogger("logger")
+logger = logging.getLogger(__file__)
 
 
 class ChaiConfig:
@@ -391,6 +391,10 @@ def run_chai(
             redirect_stdout(log_file),
             redirect_stderr(log_file),
         ):
+            chai_logger = logging.getLogger("chai_lab")
+            chai_logger.addHandler(logging.StreamHandler(log_file))
+            logger.addHandler(logging.StreamHandler(log_file))
+
             now = time.time()
             log_file.write(f"Time: {str(datetime.now(UTC))}\n")
 
@@ -415,6 +419,8 @@ def run_chai(
 
             log_file.write(f"\nFinished at: {str(datetime.now(UTC))}\n")
             log_file.write(f"Elapsed time: {time.time() - now:.2f} seconds\n")
+            chai_logger.removeHandler(chai_logger.handlers[-1])
+            logger.removeHandler(logger.handlers[-1])
 
     logger.info(f"Chai run complete: {run_id}")
     logger.info(f"Output files are in {workdir}")

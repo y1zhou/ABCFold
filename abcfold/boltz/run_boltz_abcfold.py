@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from abcfold.schema import ABCFoldConfig
 
-logger = logging.getLogger("logger")
+logger = logging.getLogger(__file__)
 
 
 def run_boltz(
