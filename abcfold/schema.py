@@ -362,7 +362,7 @@ def add_msa_to_config(
         ):
             template_pdb_id, template_chain_id = r["subject_id"].split("_")
             template_pdb_id = template_pdb_id.upper()
-            template_cif_path = dl.fetch_mmcif(template_pdb_id)
+            template_cif_path = dl.fetch_mmcif(template_pdb_id, file_type="asu")
 
             if r["query_id"] not in template_map:
                 template_map[r["query_id"]] = []
