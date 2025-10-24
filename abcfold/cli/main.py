@@ -7,6 +7,7 @@ import typer
 from rich import print_json
 
 import abcfold.cli.fold as cli_fold
+import abcfold.cli.postprocess as cli_postprocess
 import abcfold.cli.prepare as cli_prepare
 from abcfold.schema import load_abcfold_config
 
@@ -14,6 +15,9 @@ app = typer.Typer()
 
 app.add_typer(cli_prepare.app, name="prepare", help="Prepare input files for folding.")
 app.add_typer(cli_fold.app, name="fold", help="Run ABCFold to predict structures.")
+app.add_typer(
+    cli_postprocess.app, name="postprocess", help="Post-process model predictions."
+)
 
 
 @app.command(name="validate")
