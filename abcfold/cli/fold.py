@@ -5,7 +5,6 @@ from typing import Annotated
 
 import typer
 
-from abcfold.boltz.run_boltz_abcfold import run_boltz
 from abcfold.schema import load_abcfold_config
 
 app = typer.Typer()
@@ -117,12 +116,6 @@ def fold_boltz(
     conf_file: Annotated[
         Path, typer.Argument(help="Path to the ABCFold configuration file.")
     ],
-    boltz_yaml_file: Annotated[
-        Path,
-        typer.Option(
-            ..., "--boltz-yaml-file", "-i", help="Path to the Boltz configuration file."
-        ),
-    ],
     out_dir: Annotated[
         Path,
         typer.Option(
@@ -132,8 +125,16 @@ def fold_boltz(
             help="Output directory for Boltz.",
         ),
     ],
+    boltz_yaml_file: Annotated[
+        Path,
+        typer.Option(
+            ..., "--boltz-yaml-file", "-i", help="Path to the Boltz configuration file."
+        ),
+    ],
 ):
     """Build structure models with Boltz."""
+    from abcfold.boltz.run_boltz_abcfold import run_boltz
+
     conf_path = conf_file.expanduser().resolve()
     conf = load_abcfold_config(conf_path)
 
@@ -143,7 +144,12 @@ def fold_boltz(
 
     out_path = out_dir.expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
-    run_boltz(conf, boltz_conf_path, out_path, boltz_conf_path.stem)
+    run_boltz(
+        abcfold_conf=conf,
+        output_dir=out_path,
+        boltz_yaml_file=boltz_conf_path,
+        run_id=boltz_conf_path.stem,
+    )
 
 
 if __name__ == "__main__":

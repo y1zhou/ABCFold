@@ -387,6 +387,8 @@ def abcfold_to_boltz(conf: ABCFoldConfig, msa_dir: str | Path) -> BoltzInput:
     seq_types: dict[str, str] = {}
 
     # Boltz stores templates in a separate field
+    # TODO: Chai loads at most 4 templates per chain; Boltz has no such limit but
+    # excessive templates may overwhelm the GPU memory
     templates: list[BoltzStructuralTemplate] = []
 
     msa_dir_path = Path(msa_dir).expanduser().resolve()

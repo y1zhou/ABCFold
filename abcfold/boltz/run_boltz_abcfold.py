@@ -6,6 +6,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from tqdm import tqdm
+
 from abcfold.schema import ABCFoldConfig
 
 logger = logging.getLogger("logger")
@@ -13,11 +15,16 @@ logger = logging.getLogger("logger")
 
 def run_boltz(
     abcfold_conf: ABCFoldConfig,
-    boltz_yaml_file: str | Path,
     output_dir: str | Path,
+    boltz_yaml_file: str | Path,
     run_id: str,
 ) -> bool:
-    """Run Boltz using the ABCFold config file."""
+    """Entrypoint for running Boltz for structure prediction.
+
+    Returns:
+        True if the Boltz run was successful, False otherwise.
+
+    """
     workdir = Path(output_dir).expanduser().resolve()
     log_dir = workdir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -26,11 +33,11 @@ def run_boltz(
     if not boltz_yaml_file.exists():
         raise FileNotFoundError(f"Boltz config file not found: {boltz_yaml_file}")
 
-    for seed in abcfold_conf.seeds:
-        logger.info(f"Running Boltz using seed: {seed}")
+    for seed in tqdm(abcfold_conf.seeds, desc=f"Boltz run {run_id}"):
+        logger.info(f"Boltz run {run_id} using seed {seed}")
         cmd = generate_boltz_command(
             boltz_yaml_file,
-            workdir,
+            workdir / f"seed_{seed}",
             num_trunk_recycles=abcfold_conf.num_trunk_recycles,
             num_diffn_timesteps=abcfold_conf.num_diffn_timesteps,
             num_diffn_samples=abcfold_conf.num_diffn_samples,
@@ -82,12 +89,14 @@ def generate_boltz_command(
     seed: int = 42,
 ) -> list:
     """Generate the Boltz command."""
+    out_path = Path(output_dir).expanduser().resolve()
+    out_path.mkdir(parents=True, exist_ok=True)
     cmd = [
         "boltz",
         "predict",
         str(input_yaml),
         "--out_dir",
-        str(output_dir),
+        str(out_path),
         "--recycling_steps",
         str(num_trunk_recycles),
         "--sampling_steps",
