@@ -1,9 +1,13 @@
 """Run Chai-1 using ABCFold configuration file."""
 
 import logging
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
+import yaml
+from tqdm import tqdm
 
 from abcfold.schema import (
     ABCFoldConfig,
@@ -11,9 +15,9 @@ from abcfold.schema import (
     Glycan,
     Ligand,
     Polymer,
+    ProteinSeq,
     RestraintType,
     SequenceModification,
-    load_abcfold_config,
 )
 
 logger = logging.getLogger("logger")
@@ -53,14 +57,20 @@ class ChaiConfig:
         """Generate all Chai-1 input files."""
         # File paths
         self.fasta = self.work_dir / f"{self.run_id}.fasta"
-        self.restraints = self.work_dir / f"{self.run_id}.restraints"
-        self.msa = self.work_dir / "msas"
+        self.restraints: Path | None = (
+            self.work_dir / f"{self.run_id}.restraints"
+            if self.conf.restraints
+            else None
+        )
+        self.msa: Path | None = self.work_dir / "chai_msa"
+        # TODO: handle templates
 
         # Other metadata
         self.chain_type: dict[str, str] = {}
         self.fasta_entries = self.generate_chai_fasta(self.ccd_lib_dir)
-        self.chain_id = self._build_chain_id_mapping(self.fasta_entries)
+        self.chain_id = self._build_chain_id_mapping()
         self.restraints_df = self.generate_chai_restraints()
+        self.generate_chai_msa()
 
     def generate_chai_fasta(self, ccd_lib_dir: str | Path | None = None) -> list[str]:
         """Build Chai-1 style FASTA from ABCFold config.
@@ -78,9 +88,13 @@ class ChaiConfig:
         entries: list[str] = []
         for seq in self.conf.sequences:
             if isinstance(seq, Glycan):
+                for chain_id in seq.id if isinstance(seq.id, list) else [seq.id]:
+                    self.chain_type[chain_id] = "glycan"
                 entries.extend(self._build_fasta_entry("glycan", seq.id, seq.chai_str))
 
             elif isinstance(seq, Ligand):
+                for chain_id in seq.id if isinstance(seq.id, list) else [seq.id]:
+                    self.chain_type[chain_id] = "ligand"
                 if seq.ccd:
                     if ccd_lib_dir is None:
                         raise ValueError(
@@ -97,10 +111,12 @@ class ChaiConfig:
                     )
 
             elif isinstance(seq, Polymer):
+                for chain_id in seq.id if isinstance(seq.id, list) else [seq.id]:
+                    self.chain_type[chain_id] = seq.seq_type.value
                 entries.extend(
                     self._build_fasta_entry(
                         seq.seq_type.value,
-                        seq.id,
+                        seq.seq_hash,  # need to match query_id in m8 templates file
                         self._add_modifications_to_sequence(
                             seq.sequence, seq.modifications
                         ),
@@ -114,17 +130,6 @@ class ChaiConfig:
 
         return entries
 
-        # chai_chain_ids = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        # seq_metadata = {}
-        # for i, entry in enumerate(entries):
-        #     entity_type, original_chain_id = entry.splitlines()[0].split("|")
-        #     seq_metadata[original_chain_id] = (
-        #         chai_chain_ids[i],
-        #         entity_type[1:],  # remove '>' from seq_type
-        #     )
-
-        # return seq_metadata
-
     def generate_chai_restraints(self) -> pd.DataFrame | None:
         """Generate Chai-1 style restraints CSV from ABCFold config.
 
@@ -133,7 +138,6 @@ class ChaiConfig:
         Ref: https://github.com/chaidiscovery/chai-lab/tree/main/examples/restraints
         """
         if not self.conf.restraints:
-            self.restraints = None
             return
 
         restraint_cols = [
@@ -206,34 +210,75 @@ class ChaiConfig:
                     r.description,
                 )
             )
+            # TODO: validate residue names == Chai-1 expectations
         df = pd.DataFrame(entries).reset_index()
         df.columns = restraint_cols
         df.to_csv(self.restraints, index=False)
         return df
 
-    def generate_chai_msa(self, msa_dir: str | Path):
-        """Generate Chai-1 style MSA files."""
-        ...
+    def generate_chai_msa(self):
+        """Generate Chai-1 style MSA directory from ABCFold config."""
+        protein_chains = [
+            seq for seq in self.conf.sequences if isinstance(seq, ProteinSeq)
+        ]
 
-    def generate_chai_templates(self):
-        """Generate Chai-1 style templates."""
-        ...
+        # No need to move stuff around if there's only one shared MSA directory
+        # This should be the case when the MSAs were prepared using ABCFold CLI
+        msa_dirs = {c.msa_dir for c in protein_chains if c.msa_dir is not None}
+        if not msa_dirs:
+            self.msa = None
+            return
+        if len(msa_dirs) == 1:
+            self.msa = Path(msa_dirs.pop()).expanduser().resolve()
+            return
+
+        # Link `.aligned.pqt` and `a3ms/*.a3m` files
+        (self.msa / "a3ms").mkdir(parents=True, exist_ok=True)
+        for msa_dir in msa_dirs:
+            msa_dir_path = Path(msa_dir).expanduser().resolve()
+            for msa_file in msa_dir_path.glob("*.aligned.pqt"):
+                target_file = self.msa / msa_file.name
+                if not target_file.exists():
+                    target_file.symlink_to(msa_file)
+
+            for a3m_file in (msa_dir_path / "a3ms").glob("*.a3m"):
+                target_file = self.msa / "a3ms" / a3m_file.name
+                if not target_file.exists():
+                    target_file.symlink_to(a3m_file)
+
+    def dump_chai_config(self, file_path: str | Path):
+        """Dump Chai-1 config summary to a YAML file.
+
+        The YAML file contains the following fields:
+
+        - run_id: Unique identifier for the run.
+        - fasta: Path to the Chai FASTA file.
+        - restraints: Path to the restraints file (if any).
+        - msa: Path to the MSA directory (if any).
+        - chain_id_mapping: Mapping from original chain IDs to Chai-assigned chain IDs.
+        """
+        chai_conf = {
+            "run_id": self.run_id,
+            "fasta": str(self.fasta),
+            "restraints": str(self.restraints) if self.restraints else None,
+            "msa": str(self.msa) if self.msa else None,
+            "chain_id_mapping": self.chain_id,
+        }
+        with open(file_path, "w") as f:
+            yaml.safe_dump(chai_conf, f, default_flow_style=None)
 
     def _build_fasta_entry(
         self, seq_type: str, chain_id: str | list[str], sequence: str
     ) -> list[str]:
         """Build FASTA entry string."""
         if isinstance(chain_id, list):
-            for c in chain_id:
-                self.chain_type[c] = seq_type
             return [f">{seq_type}|{c}\n{sequence}" for c in chain_id]
         else:
-            self.chain_type[chain_id] = seq_type
             return [f">{seq_type}|{chain_id}\n{sequence}"]
 
     @staticmethod
     def _add_modifications_to_sequence(
-        sequence: str, modifications: list[SequenceModification]
+        sequence: str, modifications: list[SequenceModification] | None
     ) -> str:
         """Add modifications to sequence string.
 
@@ -247,14 +292,15 @@ class ChaiConfig:
             seq_list[mod.position - 1] = f"({mod.ccd})"
         return "".join(seq_list)
 
-    @staticmethod
-    def _build_chain_id_mapping(fasta_entries: list[str]) -> dict[str, str]:
+    def _build_chain_id_mapping(self) -> dict[str, str]:
         """Build mapping from original chain IDs to Chai-assigned chain IDs."""
         chai_chain_ids = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         mapping = {}
-        for i, entry in enumerate(fasta_entries):
-            original_chain_id = entry.splitlines()[0].split("|")[1]
-            mapping[original_chain_id] = chai_chain_ids[i]
+        i = 0
+        for seq in self.conf.sequences:
+            for seq_id in seq.id if isinstance(seq.id, list) else [seq.id]:
+                mapping[seq_id] = chai_chain_ids[i]
+                i += 1
         return mapping
 
     @staticmethod
@@ -287,77 +333,89 @@ class ChaiConfig:
             return f"{atom.residue_name}{atom.residue_idx}"
 
 
-def run_chai(abcfold_conf_file: str | Path, output_dir: str | Path) -> bool:
-    """Run Chai-1 using the ABCFold config file.
+def run_chai(
+    # ABCFold configuration
+    abcfold_conf: ABCFoldConfig,
+    output_dir: str | Path,
+    chai_yaml_file: str | Path,
+    # Configuration for ESM, MSA, constraints, and templates
+    template_hits_path: Path | None = None,
+    template_cif_dir: Path | None = None,
+    use_esm_embeddings: bool = True,
+    # Parameters controlling how we do inference
+    recycle_msa_subsample: int = 0,
+    low_memory: bool = True,
+) -> bool:
+    """Entrypoint for running Chai-1 structure prediction.
+
+    Args:
+        abcfold_conf: ABCFoldConfig object.
+        output_dir: Output directory for Chai-1 results.
+        chai_yaml_file: Path to Chai-1 config YAML file generated by
+            `abcfold.cli.prepare:prepare_chai`.
+        template_hits_path: Path to template hits file (in m8 format).
+        template_cif_dir: Directory containing template mmCIF files.
+        use_esm_embeddings: Whether to use ESM embeddings.
+        recycle_msa_subsample: If >0, subsample the input MSA.
+        low_memory: Whether to run Chai-1 in low memory mode.
 
     Returns:
         True if the Chai-1 run was successful, False otherwise.
 
     """
-    input_conf_file = Path(abcfold_conf_file).expanduser().resolve()
-    conf = load_abcfold_config(input_conf_file)
+    import os
+    from contextlib import redirect_stderr, redirect_stdout
+
     workdir = Path(output_dir).expanduser().resolve()
-    workdir.mkdir(parents=True, exist_ok=True)
+    log_dir = workdir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
 
-    ...
+    chai_yaml_file = Path(chai_yaml_file).expanduser().resolve()
+    if not chai_yaml_file.exists():
+        raise FileNotFoundError(f"Chai-1 config YAML file not found: {chai_yaml_file}")
+    with open(chai_yaml_file) as f:
+        chai_conf = yaml.safe_load(f)
 
+    if template_cif_dir is not None:
+        os.environ["CHAI_TEMPLATE_CIF_FOLDER"] = str(template_cif_dir)
 
-# TODO: modify this to directly call chai_lab.chai1.run_inference
-# def generate_chai_command(
-#     input_fasta: str | Path,
-#     msa_dir: str | Path,
-#     input_constraints: str | Path,
-#     output_dir: str | Path,
-#     number_of_models: int = 5,
-#     num_recycles: int = 10,
-#     seed: int = 42,
-#     use_templates_server: bool = False,
-#     template_hits_path: Path | None = None,
-# ) -> list:
-#     """Generate the Chai-1 command
+    from chai_lab.chai1 import run_inference
 
-#     Args:
-#         input_fasta (Union[str, Path]): Path to the input fasta file
-#         msa_dir (Union[str, Path]): Path to the MSA directory
-#         input_constraints (Union[str, Path]): Path to the input constraints file
-#         output_dir (Union[str, Path]): Path to the output directory
-#         number_of_models (int): Number of models to generate
-#         num_recycles (int): Number of trunk recycles
-#         seed (int): Seed for the random number generator
-#         use_templates_server (bool): If True, use templates from the server
-#         template_hits_path (Path): Path to the template hits m8 file
+    run_id = chai_conf["run_id"]
+    for seed in tqdm(abcfold_conf.seeds, desc=f"Chai-1 run {run_id}"):
+        logger.info(f"Chai-1 run {run_id} using seed {seed}")
+        log_path = log_dir / f"{run_id}_boltz_seed{seed}.log"
+        logger.info(f"Saving logs to {log_path}")
+        with (
+            open(log_path, "w") as log_file,
+            redirect_stdout(log_file),
+            redirect_stderr(log_file),
+        ):
+            now = time.time()
+            log_file.write(f"Time: {str(datetime.now(UTC))}\n")
 
-#     Returns:
-#         list: The Chai-1 command
+            run_dir = workdir / f"seed_{seed}"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            success = run_inference(
+                fasta_file=Path(chai_conf["fasta"]),
+                output_dir=run_dir,
+                msa_directory=Path(chai_conf["msa"]) if chai_conf["msa"] else None,
+                constraint_path=Path(chai_conf["restraints"])
+                if chai_conf["restraints"]
+                else None,
+                use_esm_embeddings=use_esm_embeddings,
+                template_hits_path=template_hits_path,
+                recycle_msa_subsample=recycle_msa_subsample,
+                low_memory=low_memory,
+                seed=seed,
+            )
+            if not success:
+                logger.error(f"Chai-1 run failed using seed {seed}.")
+                return False
 
-#     """
-#     chai_exe = Path(__file__).parent / "chai.py"
-#     cmd = ["python", str(chai_exe), "fold", str(input_fasta)]
+            log_file.write(f"\nFinished at: {str(datetime.now(UTC))}\n")
+            log_file.write(f"Elapsed time: {time.time() - now:.2f} seconds\n")
 
-#     if Path(msa_dir).exists():
-#         cmd += ["--msa-directory", str(msa_dir)]
-#     if Path(input_constraints).exists():
-#         cmd += ["--constraint-path", str(input_constraints)]
-
-#     cmd += ["--num-diffn-samples", str(number_of_models)]
-#     cmd += ["--num-trunk-recycles", str(num_recycles)]
-#     cmd += ["--seed", str(seed)]
-
-#     assert not (use_templates_server and template_hits_path), (
-#         "Cannot specify both templates server and path"
-#     )
-
-#     if shutil.which("kalign") is None and (use_templates_server or template_hits_path):
-#         logger.warning(
-#             "kalign not found, skipping template search kalign is required. \
-# Please install kalign to use templates with Chai-1."
-#         )
-#     else:
-#         if use_templates_server:
-#             cmd += ["--use-templates-server"]
-#         if template_hits_path:
-#             cmd += ["--template-hits-path", str(template_hits_path)]
-
-#     cmd += [str(output_dir)]
-
-#     return cmd
+    logger.info(f"Chai run complete: {run_id}")
+    logger.info(f"Output files are in {workdir}")
+    return True

@@ -5,7 +5,6 @@ from typing import Annotated
 
 import typer
 
-from abcfold.boltz.schema import abcfold_to_boltz
 from abcfold.schema import add_msa_to_config, load_abcfold_config, write_config
 
 app = typer.Typer()
@@ -115,9 +114,32 @@ def prepare_chai(
             help="Output directory for prepared files.",
         ),
     ],
+    ccd_lib_dir: Annotated[
+        Path | None,
+        typer.Option(
+            help="Path to the Boltz CCD library directory. Can omit if no CCD ligands or modifications were used.",
+        ),
+    ] = None,
 ):
-    """Prepare FASTA, restraints, MSA, and templates for Chai."""
-    raise NotImplementedError
+    """Prepare FASTA and restraints files for Chai."""
+    from abcfold.chai1.run_chai1_abcfold import ChaiConfig
+
+    conf_path = conf_file.expanduser().resolve()
+    conf = load_abcfold_config(conf_path)
+    out_path = out_dir.expanduser().resolve()
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    run_id = conf_path.stem
+    chai_conf = ChaiConfig(conf, out_path, run_id, ccd_lib_dir)
+    chai_conf.generate_chai_inputs()
+
+    config_yaml_file = out_path / f"{run_id}_chai_config.yaml"
+    chai_conf.dump_chai_config(config_yaml_file)
+
+    print(f"Chai FASTA file written to: {chai_conf.fasta}")
+    if chai_conf.restraints is not None:
+        print(f"Chai restraints file written to: {chai_conf.restraints}")
+    print(f"Chai config YAML written to: {config_yaml_file}")
 
 
 @app.command(name="boltz")
@@ -136,6 +158,8 @@ def prepare_boltz(
     ],
 ):
     """Prepare YAML and MSA files for Boltz."""
+    from abcfold.boltz.schema import abcfold_to_boltz
+
     conf_path = conf_file.expanduser().resolve()
     conf = load_abcfold_config(conf_path)
     out_path = out_dir.expanduser().resolve()
