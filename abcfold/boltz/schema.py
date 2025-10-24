@@ -374,12 +374,17 @@ def merge_chai_msa_to_csv(
     return out_file
 
 
-def abcfold_to_boltz(conf: ABCFoldConfig, msa_dir: str | Path) -> BoltzInput:
+def abcfold_to_boltz(
+    conf: ABCFoldConfig, msa_dir: str | Path, max_num_templates_per_chain: int = 4
+) -> BoltzInput:
     """Convert ABCFold config to Boltz input schema.
 
     Args:
         conf: ABCFold configuration.
         msa_dir: Directory to save MSA CSV files for Boltz.
+        max_num_templates_per_chain: Maximum number of templates to use per chain.
+            The default is 4, which matches Chai's limit. A higher number may lead to
+            excessive GPU memory usage.
 
     """
     # Sequences
@@ -387,8 +392,6 @@ def abcfold_to_boltz(conf: ABCFoldConfig, msa_dir: str | Path) -> BoltzInput:
     seq_types: dict[str, str] = {}
 
     # Boltz stores templates in a separate field
-    # TODO: Chai loads at most 4 templates per chain; Boltz has no such limit but
-    # excessive templates may overwhelm the GPU memory
     templates: list[BoltzStructuralTemplate] = []
 
     msa_dir_path = Path(msa_dir).expanduser().resolve()
@@ -434,7 +437,9 @@ def abcfold_to_boltz(conf: ABCFoldConfig, msa_dir: str | Path) -> BoltzInput:
             # Templates
             if not seq.templates:
                 continue
-            for tmpl in seq.templates:
+            for i, tmpl in enumerate(seq.templates, start=1):
+                if i > max_num_templates_per_chain:
+                    break
                 tmpl_path = Path(tmpl.path).expanduser().resolve()
                 cif_path, pdb_path = None, None
                 match "".join(tmpl_path.suffixes[-2:]).lower():

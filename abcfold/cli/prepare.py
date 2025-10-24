@@ -156,6 +156,12 @@ def prepare_boltz(
             help="Output directory for prepared files.",
         ),
     ],
+    max_num_templates_per_chain: Annotated[
+        int,
+        typer.Option(
+            help="Maximum number of templates to use per chain. The default is 4, which matches Chai's limit. A higher number may lead to excessive GPU memory usage.",
+        ),
+    ] = 4,
 ):
     """Prepare YAML and MSA files for Boltz."""
     from abcfold.boltz.schema import abcfold_to_boltz
@@ -165,7 +171,9 @@ def prepare_boltz(
     out_path = out_dir.expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
 
-    boltz_conf = abcfold_to_boltz(conf, out_path / "boltz_msa")
+    boltz_conf = abcfold_to_boltz(
+        conf, out_path / "boltz_msa", max_num_templates_per_chain
+    )
     run_id = conf_path.stem
     boltz_yaml_file = out_path / f"{run_id}.yaml"
     write_config(boltz_conf, boltz_yaml_file)
