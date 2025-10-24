@@ -133,13 +133,13 @@ def prepare_chai(
     chai_conf = ChaiConfig(conf, out_path, run_id, ccd_lib_dir)
     chai_conf.generate_chai_inputs()
 
-    config_yaml_file = out_path / f"{run_id}_chai_config.yaml"
+    config_yaml_file = out_path / f"{run_id}.yaml"
     chai_conf.dump_chai_config(config_yaml_file)
 
     print(f"Chai FASTA file written to: {chai_conf.fasta}")
     if chai_conf.restraints is not None:
         print(f"Chai restraints file written to: {chai_conf.restraints}")
-    print(f"Chai config YAML written to: {config_yaml_file}")
+    print(f"Chai config YAML (with chain mappings) written to: {config_yaml_file}")
 
 
 @app.command(name="boltz")

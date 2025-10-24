@@ -37,7 +37,7 @@ def run_boltz(
         logger.info(f"Boltz run {run_id} using seed {seed}")
         cmd = generate_boltz_command(
             boltz_yaml_file,
-            workdir / f"seed_{seed}",
+            workdir / f"boltz_seed_{seed}",
             num_trunk_recycles=abcfold_conf.num_trunk_recycles,
             num_diffn_timesteps=abcfold_conf.num_diffn_timesteps,
             num_diffn_samples=abcfold_conf.num_diffn_samples,

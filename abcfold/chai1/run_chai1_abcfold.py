@@ -384,7 +384,7 @@ def run_chai(
     run_id = chai_conf["run_id"]
     for seed in tqdm(abcfold_conf.seeds, desc=f"Chai-1 run {run_id}"):
         logger.info(f"Chai-1 run {run_id} using seed {seed}")
-        log_path = log_dir / f"{run_id}_boltz_seed{seed}.log"
+        log_path = log_dir / f"{run_id}_chai_seed_{seed}.log"
         logger.info(f"Saving logs to {log_path}")
         with (
             open(log_path, "w") as log_file,
@@ -398,7 +398,7 @@ def run_chai(
             now = time.time()
             log_file.write(f"Time: {str(datetime.now(UTC))}\n")
 
-            run_dir = workdir / f"seed_{seed}"
+            run_dir = workdir / f"chai_seed_{seed}"
             run_dir.mkdir(parents=True, exist_ok=True)
             success = run_inference(
                 fasta_file=Path(chai_conf["fasta"]),

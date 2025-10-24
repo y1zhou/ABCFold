@@ -18,10 +18,7 @@ def fold_af3(
     out_dir: Annotated[
         Path,
         typer.Option(
-            ...,
-            "--out-dir",
-            "-o",
-            help="Output directory for prepared files.",
+            ..., "--out-dir", "-o", help="Output directory for prepared files."
         ),
     ],
 ):
@@ -37,10 +34,7 @@ def fold_chai(
     out_dir: Annotated[
         Path,
         typer.Option(
-            ...,
-            "--out-dir",
-            "-o",
-            help="Output directory for prepared files.",
+            ..., "--out-dir", "-o", help="Output directory for prepared files."
         ),
     ],
     chai_yaml_file: Annotated[
@@ -54,21 +48,15 @@ def fold_chai(
     ],
     use_esm_embeddings: Annotated[
         bool,
-        typer.Option(
-            help="Whether to use ESM embeddings in Chai.",
-        ),
+        typer.Option(help="Whether to use ESM embeddings in Chai."),
     ] = True,
     template_hits_path: Annotated[
         Path | None,
-        typer.Option(
-            help="Path to template hits file (in m8 format).",
-        ),
+        typer.Option(help="Path to template hits file (in m8 format)."),
     ] = None,
     template_cif_dir: Annotated[
         Path | None,
-        typer.Option(
-            help="Directory containing template mmCIF files.",
-        ),
+        typer.Option(help="Directory containing template mmCIF files."),
     ] = None,
     recycle_msa_subsample: Annotated[
         int,
@@ -78,9 +66,7 @@ def fold_chai(
     ] = 0,
     low_memory: Annotated[
         bool,
-        typer.Option(
-            help="Whether to use low memory mode in Chai.",
-        ),
+        typer.Option(help="Whether to use low memory mode in Chai."),
     ] = True,
 ):
     """Build structure models with Chai."""
@@ -118,12 +104,7 @@ def fold_boltz(
     ],
     out_dir: Annotated[
         Path,
-        typer.Option(
-            ...,
-            "--out-dir",
-            "-o",
-            help="Output directory for Boltz.",
-        ),
+        typer.Option(..., "--out-dir", "-o", help="Output directory for Boltz."),
     ],
     boltz_yaml_file: Annotated[
         Path,
