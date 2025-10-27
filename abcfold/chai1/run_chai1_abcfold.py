@@ -183,14 +183,19 @@ class ChaiConfig:
 
             # Special treatment for pocket restraints: swap to put hotspot in chain B
             if restraint_type == "pocket":
-                if chain2_id == r.boltz_binder_chain:
+                if r.boltz_binder_chain is None:
+                    raise ValueError(
+                        f"Pocket restraint missing `boltz_binder_chain`: {r}"
+                    )
+                binder_chain_id = self.chain_id[r.boltz_binder_chain]
+                if chain2_id == binder_chain_id:
                     chain1_id, chain2_id, res1_idx, res2_idx = (
                         chain2_id,
                         chain1_id,
                         None,
                         res1_idx,
                     )
-                elif chain1_id == r.boltz_binder_chain:
+                elif chain1_id == binder_chain_id:
                     res1_idx = None
                 else:
                     raise ValueError(
