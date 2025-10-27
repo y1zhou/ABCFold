@@ -225,6 +225,14 @@ def serve(
         Path,
         typer.Argument(help="Directory containing post-processed results."),
     ],
+    host: Annotated[
+        str,
+        typer.Option("--host", "-h", help="Host address to bind the server to."),
+    ] = "localhost",
+    port: Annotated[
+        int,
+        typer.Option("--port", "-p", help="Port number to bind the server to."),
+    ] = 8000,
 ):
     """Serve the output HTML page with a local web server."""
     import os
@@ -232,7 +240,6 @@ def serve(
     import sys
     import webbrowser
 
-    from abcfold.abcfold import PORT
     from abcfold.html.html_utils import (
         NoCacheHTTPRequestHandler,
         output_open_html_script,
@@ -246,15 +253,15 @@ def serve(
     os.chdir(result_path)
 
     # Make a script to open the output HTML file in the default web browser
-    output_open_html_script("open_output.py", port=PORT)
+    output_open_html_script("open_output.py", port=port)
 
     try:
         # Start the server
-        with socketserver.TCPServer(("", PORT), NoCacheHTTPRequestHandler) as httpd:
-            logger.info(f"Serving at port {PORT}: http://localhost:{PORT}/index.html")
+        with socketserver.TCPServer(("", port), NoCacheHTTPRequestHandler) as httpd:
+            logger.info(f"Serving at http://{host}:{port}/index.html")
             logger.info("Press Ctrl+C to stop the server")
             # Open the main HTML page in the default web browser
-            webbrowser.open(f"http://localhost:{PORT}/index.html")
+            webbrowser.open(f"http://{host}:{port}/index.html")
             # Keep the server running
             httpd.serve_forever()
     except KeyboardInterrupt:
