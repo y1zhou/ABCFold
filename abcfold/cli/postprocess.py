@@ -61,19 +61,15 @@ def postprocess(
     if boltz_results_dir is not None:
         logger.info("Post-processing Boltz results...")
 
-        boltz_out_dirs = list(boltz_results_dir.glob("boltz_seed_*/boltz_results*"))
-        run_id = boltz_out_dirs[0].name.split("boltz_results_")[1]
-        bo = PatchedBoltzOutput(boltz_out_dirs, None, run_id, False)
+        boltz_out_dirs = list(boltz_results_dir.glob("boltz_results_*"))
+        bo = PatchedBoltzOutput(boltz_out_dirs)
         found_models.append(bo)
 
     if chai_results_dir is not None:
         logger.info("Post-processing Chai results...")
 
-        chai_out_dirs = list(chai_results_dir.glob("chai_seed_*"))
-        run_seed = chai_out_dirs[0].name
-        run_log_path = next((chai_out_dirs[0].parent / "logs").glob("*.log"))
-        run_id = run_log_path.name.split(run_seed)[0]
-        co = PatchedChaiOutput(chai_out_dirs, None, run_id, False)
+        chai_out_dirs = list(chai_results_dir.glob("chai_*_seed-*"))
+        co = PatchedChaiOutput(chai_out_dirs)
         found_models.append(co)
 
     # Compile data to make output page
@@ -268,49 +264,25 @@ def serve(
 
 
 class PatchedBoltzOutput(BoltzOutput):
-    """Patched BoltzOutput to bypass get_input_fasta()."""
+    """Patched BoltzOutput to bypass moving files around.
 
-    def __init__(
-        self,
-        boltz_output_dirs: list[str | Path],
-        input_params: dict,
-        name: str,
-        save_input: bool = False,
-    ):
+    We already have the files in place from ABCFold.
+    """
+
+    def __init__(self, boltz_output_dirs: list[str | Path]):
         """Process the output of a Boltz run.
 
         Ref: `abcfold.abcfold.output.boltz:BoltzOutput`
         """
         self.output_dirs = [Path(x) for x in boltz_output_dirs]
-        self.input_params = input_params
-        self.name = name
-        self.save_input = save_input
 
-        parent_dir = self.output_dirs[0].parent
-        new_parent = parent_dir / f"boltz_{self.name}"
-        new_parent.mkdir(parents=True, exist_ok=True)
+        # The directory pattern is boltz_results_{run_id}_seed-{seed}
+        self.name = (
+            self.output_dirs[0].name.split("boltz_results_")[1].split("_seed-")[0]
+        )
 
-        if self.save_input:
-            boltz_yaml = list(parent_dir.glob("*.yaml"))[0]
-            if boltz_yaml.exists():
-                boltz_yaml.rename(new_parent / "boltz_input.yaml")
-
-            boltz_msas = list(parent_dir.glob("*.a3m"))
-            if boltz_msas:
-                for boltz_msa in boltz_msas:
-                    if boltz_msa.exists():
-                        boltz_msa.rename(new_parent / boltz_msa.name)
-
-        new_output_dirs = []
-        for output_dir in self.output_dirs:
-            if output_dir.name.startswith("boltz_results_"):
-                new_path = new_parent / output_dir.name
-                output_dir.rename(new_path)
-                new_output_dirs.append(new_path)
-            else:
-                new_output_dirs.append(output_dir)
-        self.output_dirs = new_output_dirs
-
+        # Placeholder attributes to satisfy the parent class
+        self.input_params = None
         self.yaml_input_obj = None
 
         self.output = self.process_boltz_output()
@@ -341,10 +313,212 @@ class PatchedBoltzOutput(BoltzOutput):
             for seed in self.seeds
         }
 
+    def update_chain_labels(self, cif_file):
+        """Boltz generated files have matching chain labels to the input.
+
+        Called when parsing files in `self.process_boltz_output()`.
+        """
+        return cif_file
+
+    def pae_to_af3(self):
+        """Convert the PAE data from Boltz to the format used by Alphafold3.
+
+        Avoid modifying files in-place; instead, write files with a '-af3.json' suffix.
+        """
+        from abcfold.output.file_handlers import ConfidenceJsonFile
+        from abcfold.output.utils import Af3Pae
+
+        new_pae_files = {}
+        for seed in self.seeds:
+            for pae_file, cif_file in zip(
+                self.pae_files[seed], self.cif_files[seed], strict=True
+            ):
+                pae = Af3Pae.from_boltz(pae_file.data, cif_file)
+                pae_path = pae_file.pathway
+                out_name = pae_path.with_name(f"{pae_path.stem}-af3.json")
+                pae.to_file(out_name)
+
+                if seed not in new_pae_files:
+                    new_pae_files[seed] = []
+                new_pae_files[seed].append(ConfidenceJsonFile(out_name))
+
+        self.output = {
+            seed: {
+                i: {
+                    "cif": cif_file,
+                    "af3_pae": new_pae_files[seed][i],
+                    "json": self.output[seed][i]["json"],
+                }
+                for i, cif_file in enumerate(self.cif_files[seed])
+            }
+            for seed in self.seeds
+        }
+
 
 class PatchedChaiOutput(ChaiOutput):
     """Patched ChaiOutput to bypass get_input_fasta()."""
 
-    def get_input_fasta(self):
-        """Return None to bypass input fasta retrieval."""
-        return
+    def __init__(self, chai_output_dirs: list[str | Path]):
+        """Avoid moving files around for Chai output processing."""
+        self.output_dirs = [Path(x) for x in chai_output_dirs]
+
+        # The directory pattern is chai_{run_id}_seed-{seed}
+        self.name = self.output_dirs[0].name.split("chai_")[1].split("_seed-")[0]
+
+        # Placeholder attributes to satisfy the parent class
+        self.input_params = None
+        self.input_fasta = None
+
+        self.output = self.process_chai_output()
+        self.seeds = list(self.output.keys())
+
+        self.pae_files = {
+            seed: [
+                value["pae"] for value in self.output[seed].values() if "pae" in value
+            ]
+            for seed in self.seeds
+        }
+        self.cif_files = {
+            seed: [value["cif"] for value in self.output[seed].values()]
+            for seed in self.seeds
+        }
+        self.scores_files = {
+            seed: [value["scores"] for value in self.output[seed].values()]
+            for seed in self.seeds
+        }
+        self.pae_to_af3()
+        self.af3_pae_files = {
+            seed: [value["af3_pae"] for value in self.output[seed].values()]
+            for seed in self.seeds
+        }
+
+    def process_chai_output(self):
+        """Process the output of a Chai run.
+
+        Main difference from parent class:
+
+        - Bypass calling `self.update_chain_labels()`.
+        - Only glob for '*.model_idx*' files instead of all possible output files.
+        """
+        from abcfold.output.file_handlers import CifFile, FileTypes, NpyFile, NpzFile
+
+        file_groups = {}
+
+        for pathway in self.output_dirs:
+            seed = pathway.name.split("_")[-1]
+            if seed not in file_groups:
+                file_groups[seed] = {}
+
+            # Handle PAE scores
+            if (pae_file := pathway / "pae_scores.npy").exists():
+                if -1 not in file_groups[seed]:
+                    file_groups[seed][-1] = [NpyFile(str(pae_file))]
+                else:
+                    file_groups[seed][-1].append(NpyFile(str(pae_file)))
+
+            for output in pathway.rglob("*.model_idx_*"):
+                number = output.stem.split(".model_idx_")[-1]
+                if number.isdigit():
+                    number = int(number)
+                else:
+                    number = -1
+
+                file_type = output.suffix[1:]
+                match file_type:
+                    case FileTypes.NPZ.value:
+                        file_ = NpzFile(str(output))
+
+                    case FileTypes.CIF.value:
+                        file_ = CifFile(str(output), self.input_params)
+                        # file_ = self.update_chain_labels(file_)
+
+                    case FileTypes.NPY.value:
+                        file_ = NpyFile(str(output))
+                    case _:
+                        continue
+
+                if number not in file_groups[seed]:
+                    file_groups[seed][number] = [file_]
+                else:
+                    file_groups[seed][number].append(file_)
+
+        seed_dict = {}
+        for seed, models in file_groups.items():
+            model_number_file_type_file = {}
+            pae_file_data = None
+            if -1 in models:
+                for file_ in models[-1]:
+                    if file_.pathway.name == "pae_scores.npy":
+                        pae_file_data = file_
+                        break
+
+            for model_number, files in models.items():
+                if model_number == -1:
+                    continue
+                intermediate_dict = {}
+                for file_ in sorted(files, key=lambda x: x.suffix):
+                    if file_.pathway.stem.startswith("scores.model"):
+                        intermediate_dict["scores"] = file_
+                    elif file_.pathway.stem.startswith("pred.model"):
+                        file_.name = f"Chai-1_{seed}_{model_number}"
+                        # Chai cif not recognised by pae-viewer, so we load and save
+                        file_.pathway = (
+                            file_.pathway.parent / f"stripped-{file_.pathway.name}"
+                        )
+                        file_.to_file(file_.pathway)
+                        intermediate_dict["cif"] = file_
+
+                if pae_file_data is not None:
+                    # new_pae_path = (
+                    #     file_.pathway.parent / f"pae_scores_model_{model_number}.npy"
+                    # )
+                    # if not new_pae_path.exists():
+                    #     import shutil
+
+                    #     shutil.copy(pae_file_data.pathway, new_pae_path)
+                    # intermediate_dict["pae"] = NpyFile(str(new_pae_path))
+                    intermediate_dict["pae"] = pae_file_data
+
+                model_number_file_type_file[model_number] = intermediate_dict
+
+            model_number_file_type_file = {
+                model_number: model_number_file_type_file[model_number]
+                for model_number in sorted(model_number_file_type_file)
+            }
+            seed_dict[seed] = model_number_file_type_file
+
+        return seed_dict
+
+    def pae_to_af3(self):
+        """Convert the Chai-1 PAE data to the format expected by AlphaFold3.
+
+        Avoid modifying files in-place; instead, write files with a '-af3.json' suffix.
+        """
+        from abcfold.output.file_handlers import ConfidenceJsonFile
+        from abcfold.output.utils import Af3Pae
+
+        new_pae_files = {}
+        for seed in self.seeds:
+            for i, (pae_file, cif_file) in enumerate(
+                zip(self.pae_files[seed], self.cif_files[seed], strict=True)
+            ):
+                pae = Af3Pae.from_chai1(pae_file.data[i], cif_file)
+                pae_path = pae_file.pathway
+                out_name = pae_path.with_name(f"{pae_path.stem}-af3.json")
+                pae.to_file(out_name)
+
+                if seed not in new_pae_files:
+                    new_pae_files[seed] = []
+                new_pae_files[seed].append(ConfidenceJsonFile(out_name))
+
+        self.output = {
+            seed: {
+                i: {
+                    "cif": cif_file,
+                    "af3_pae": new_pae_files[seed][i],
+                    "scores": self.output[seed][i]["scores"],
+                }
+                for i, cif_file in enumerate(self.cif_files[seed])
+            }
+            for seed in self.seeds
+        }
