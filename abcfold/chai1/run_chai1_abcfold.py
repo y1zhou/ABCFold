@@ -106,6 +106,8 @@ class ChaiConfig:
                             self._build_fasta_entry("ligand", chain_id, smiles)
                         )
                 else:
+                    if seq.smiles is None:
+                        raise ValueError("Ligand must have either `ccd` or `smiles`.")
                     entries.extend(
                         self._build_fasta_entry("ligand", seq.id, seq.smiles)
                     )
@@ -238,6 +240,8 @@ class ChaiConfig:
             return
 
         # Link `.aligned.pqt` and `a3ms/*.a3m` files
+        if self.msa is None:
+            return
         (self.msa / "a3ms").mkdir(parents=True, exist_ok=True)
         for msa_dir in msa_dirs:
             msa_dir_path = Path(msa_dir).expanduser().resolve()
@@ -405,7 +409,7 @@ def run_chai(
 
             run_dir = workdir / f"chai_{run_id}_seed-{seed}"
             run_dir.mkdir(parents=True, exist_ok=True)
-            success = run_inference(
+            chai_models = run_inference(
                 fasta_file=Path(chai_conf["fasta"]),
                 output_dir=run_dir,
                 msa_directory=Path(chai_conf["msa"]) if chai_conf["msa"] else None,
@@ -418,9 +422,11 @@ def run_chai(
                 low_memory=low_memory,
                 seed=seed,
             )
-            if not success:
+            if not chai_models:
                 logger.error(f"Chai-1 run failed using seed {seed}.")
                 return False
+
+            np.save(f"{run_dir}/pae_scores.npy", chai_models.pae)
 
             log_file.write(f"\nFinished at: {str(datetime.now(UTC))}\n")
             log_file.write(f"Elapsed time: {time.time() - now:.2f} seconds\n")
