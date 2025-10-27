@@ -388,6 +388,7 @@ def run_chai(
     if template_cif_dir is not None:
         os.environ["CHAI_TEMPLATE_CIF_FOLDER"] = str(template_cif_dir)
 
+    import numpy as np
     from chai_lab.chai1 import run_inference
 
     run_id = chai_conf["run_id"]
@@ -433,6 +434,30 @@ def run_chai(
             chai_logger.removeHandler(chai_logger.handlers[-1])
             logger.removeHandler(logger.handlers[-1])
 
+        # Modify chain IDs to match those in the input
+        id_map_rev = {v: k for k, v in chai_conf["chain_id_mapping"].items()}
+        for f in run_dir.glob("*.cif"):
+            update_chain_id(f, id_map_rev)
+
     logger.info(f"Chai run complete: {run_id}")
     logger.info(f"Output files are in {workdir}")
     return True
+
+
+def update_chain_id(cif_file: str | Path, chain_mapping: dict[str, str]):
+    """Update chain IDs in a mmCIF file according to the given mapping."""
+    import gemmi
+
+    cif_path = Path(cif_file).expanduser().resolve()
+    if not cif_path.exists():
+        raise FileNotFoundError(f"mmCIF file not found: {cif_path}")
+
+    st = gemmi.read_structure(str(cif_path), format=gemmi.CoorFormat.Detect)
+    st.setup_entities()
+
+    for model in st:
+        for chain in model:
+            if chain.name in chain_mapping:
+                chain.name = chain_mapping[chain.name]
+
+    st.make_mmcif_document().write_file(str(cif_path))
