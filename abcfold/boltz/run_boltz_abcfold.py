@@ -45,7 +45,7 @@ def run_boltz(
             additional_args=abcfold_conf.boltz_additional_cli_args,
         )
 
-        log_path = log_dir / f"{run_id}_boltz_seed{seed}.log"
+        log_path = log_dir / f"boltz_{run_id}_seed-{seed}.log"
         with (
             sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT, encoding="utf-8") as p,  #  noqa: S603
             open(log_path, "w") as log_file,
@@ -73,6 +73,13 @@ def run_boltz(
             elif "WARNING: ran out of memory" in stdout:
                 logger.error("Boltz ran out of memory")
                 return False
+
+        # Move Boltz output files out of their subdirectories
+        final_out_dir = workdir / f"boltz_results_{run_id}_seed-{seed}"
+        (workdir / f"boltz_seed_{seed}" / f"boltz_results_{run_id}").rename(
+            final_out_dir
+        )
+        (workdir / f"boltz_seed_{seed}").rmdir()
 
     logger.info(f"Boltz run complete: {run_id}")
     logger.info(f"Output files are in {workdir}")

@@ -126,10 +126,11 @@ def prepare_chai(
 
     conf_path = conf_file.expanduser().resolve()
     conf = load_abcfold_config(conf_path)
-    out_path = out_dir.expanduser().resolve()
+    run_id = conf_path.stem
+
+    out_path = (out_dir / f"chai_{run_id}").expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
 
-    run_id = conf_path.stem
     chai_conf = ChaiConfig(conf, out_path, run_id, ccd_lib_dir)
     chai_conf.generate_chai_inputs()
 
@@ -168,13 +169,15 @@ def prepare_boltz(
 
     conf_path = conf_file.expanduser().resolve()
     conf = load_abcfold_config(conf_path)
-    out_path = out_dir.expanduser().resolve()
+    run_id = conf_path.stem
+
+    out_path = (out_dir / f"boltz_{run_id}").expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
 
     boltz_conf = abcfold_to_boltz(
         conf, out_path / "boltz_msa", max_num_templates_per_chain
     )
-    run_id = conf_path.stem
+
     boltz_yaml_file = out_path / f"{run_id}.yaml"
     write_config(boltz_conf, boltz_yaml_file)
     print(f"Boltz config written to: {boltz_yaml_file}")
