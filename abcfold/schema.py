@@ -348,6 +348,17 @@ def add_msa_to_config(
         templates_path = out_path / "all_chain_templates.m8"
         templates_df = parse_m8_file(templates_path)
 
+        # Remove duplicates
+        templates_df["subject_pdb_id"] = templates_df["subject_id"].str.extract(
+            r"^(\w+)_\w$"
+        )
+        templates_df.drop_duplicates(
+            "subject_pdb_id", inplace=True, keep="first", ignore_index=True
+        )
+        templates_df.drop(columns=["subject_pdb_id"]).to_csv(
+            templates_path, index=False, header=False, sep="\t"
+        )
+
         template_map: dict[str, list[StructuralTemplate]] = {}
         hash_to_chains: dict[str, list[str]] = {
             seq.seq_hash: (seq.id if isinstance(seq.id, list) else [seq.id])
