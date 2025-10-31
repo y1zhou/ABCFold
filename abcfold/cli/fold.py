@@ -85,6 +85,8 @@ def fold_chai(
     out_path.mkdir(parents=True, exist_ok=True)
     if template_cif_dir is not None:
         os.environ["CHAI_TEMPLATE_CIF_FOLDER"] = str(template_cif_dir)
+
+    # TODO: take advantage of num_trunk_samples when running with multiple seeds
     run_chai(
         abcfold_conf=conf,
         output_dir=out_path,

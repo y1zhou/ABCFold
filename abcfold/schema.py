@@ -228,7 +228,7 @@ class ABCFoldConfig(BaseModel):
     num_trunk_recycles: int = 3  # Boltz: recycling_steps
     num_diffn_timesteps: int = 200  # Boltz: sampling_steps
     num_diffn_samples: int = 5  # Boltz: diffusion_samples
-    num_trunk_samples: int = 1
+    num_trunk_samples: int = 1  # >1 will add to seed and run multiple times in Chai-1
 
     # Model-specific settings
     boltz_affinity_binder_chain: str | None = None
@@ -365,7 +365,7 @@ def add_msa_to_config(
             for seq in conf.sequences
             if isinstance(seq, ProteinSeq)
         }
-        # Enable multithreading here
+        # TODO: Enable multithreading here
         for _, r in tqdm(
             templates_df.iterrows(),
             total=templates_df.shape[0],
