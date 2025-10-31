@@ -16,7 +16,7 @@ options:
 
   I/O
   ==========================================
-  -o, --output-dir        output directory to store results (default: [mktemp -d]). Note
+  -o, --output-dir        output directory to store results (default: <mktemp -d>). Note
                             that content in this directory may be overwritten.
 
   -r, --run-id            the name of this run (default: basename of input YAML without extension)
@@ -36,9 +36,13 @@ options:
   ==========================================
   --abcfold-repo-dir      path to the ABCFold2 repository (default: inferred from script location)
 
-  --template-cache-dir    path to the template cache directory (default: ${HOME}/.cache/rcsb)
+  --boltz-model-dir       path to the Boltz model checkpoints (default: \$BOLTZ_CACHE > ${HOME}/.boltz/)
 
-  --ccd-lib-dir           path to the CCD library directory (default: ${HOME}/.boltz/mols)
+  --chai-model-dir        path to the Chai model checkpoints (default: \$CHAI_DOWNLOADS_DIR > <chai-package-root>/downloads/)
+
+  --template-cache-dir    path to the template cache directory (default: ${HOME}/.cache/rcsb/)
+
+  --ccd-lib-dir           path to the CCD library directory (default: \$BOLTZ_CACHE/mols/)
 
   --chai-template-m8      path to the Chai template hits file (default: inferred from MSA search step)
 
@@ -49,7 +53,6 @@ script_dir="$(dirname "${script_path}")"
 abcfold_repo_dir="$(realpath "${script_dir}/..")"
 
 template_cache_dir="${HOME}/.cache/rcsb"
-ccd_lib_dir="${HOME}/.boltz/mols"
 
 search_msa=1
 postprocess=0
@@ -62,7 +65,7 @@ while [[ $# -gt 0 ]]; do
         exit 0
         ;;
     -i | --input-yaml)
-        abcfold_config="${2}"
+        abcfold_config="$(realpath "${2}")"
         shift # past argument
         shift # past value
         ;;
@@ -89,7 +92,19 @@ while [[ $# -gt 0 ]]; do
         shift
         ;;
     --abcfold-repo-dir)
-        abcfold_repo_dir="${2}"
+        abcfold_repo_dir="$(realpath "${2}")"
+        shift
+        shift
+        ;;
+    --boltz-model-dir)
+        BOLTZ_CACHE="$(realpath "${2}")"
+        export BOLTZ_CACHE
+        shift
+        shift
+        ;;
+    --chai-model-dir)
+        CHAI_DOWNLOADS_DIR="$(realpath "${2}")"
+        export CHAI_DOWNLOADS_DIR
         shift
         shift
         ;;
@@ -104,12 +119,12 @@ while [[ $# -gt 0 ]]; do
         shift
         ;;
     --chai-template-m8)
-        chai_template_m8="${2}"
+        chai_template_m8="$(realpath "${2}")"
         shift
         shift
         ;;
     --chai-template-cif-dir)
-        chai_template_cif_dir="${2}"
+        chai_template_cif_dir="$(realpath "${2}")"
         shift
         shift
         ;;
@@ -127,7 +142,7 @@ if [ -z "${abcfold_config:-}" ]; then
     echo "${DOCSTRING}"
     exit 1
 fi
-abcfold_config="$(realpath "${abcfold_config}")"
+
 if [ ! -f "${abcfold_config}" ]; then
     echo "Error: input YAML file '${abcfold_config}' does not exist."
     exit 1
@@ -151,7 +166,22 @@ if [ -z "${chai_template_m8:-}" ]; then
     chai_template_m8="${abcfold_out_dir}/msa/all_chain_templates.m8"
 fi
 if [ -z "${chai_template_cif_dir:-}" ]; then
-    chai_template_cif_dir="${abcfold_out_dir}/msa/chai_templates_cif/"
+    chai_template_cif_dir="${abcfold_out_dir}/msa/chai_templates_cif"
+fi
+
+# Set model checkpoint cache directories
+if [ -z "${BOLTZ_CACHE:-}" ]; then
+    BOLTZ_CACHE="$(realpath "${HOME}/.boltz")"
+fi
+BOLTZ_CACHE="$(realpath "${BOLTZ_CACHE}")"
+export BOLTZ_CACHE
+ccd_lib_dir="${BOLTZ_CACHE}/mols"
+
+if [ -z "${CHAI_DOWNLOADS_DIR:-}" ]; then
+    echo '[NOTE] CHAI_DOWNLOADS_DIR not set, defaulting to <chai-package-root>/downloads/.'
+else
+    CHAI_DOWNLOADS_DIR="$(realpath "${CHAI_DOWNLOADS_DIR}")"
+    export CHAI_DOWNLOADS_DIR
 fi
 
 # Print out settings before running
