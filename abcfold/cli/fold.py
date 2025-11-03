@@ -116,6 +116,8 @@ def fold_boltz(
     ],
 ):
     """Build structure models with Boltz."""
+    from tqdm import tqdm
+
     from abcfold.boltz.run_boltz_abcfold import run_boltz
 
     conf_path = conf_file.expanduser().resolve()
@@ -127,12 +129,22 @@ def fold_boltz(
 
     out_path = out_dir.expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
-    run_boltz(
-        abcfold_conf=conf,
-        output_dir=out_path,
-        boltz_yaml_file=boltz_conf_path,
-        run_id=boltz_conf_path.stem,
-    )
+    run_id = boltz_conf_path.stem
+    for seed in tqdm(conf.seeds, desc=f"Boltz run {run_id}"):
+        print(f"Boltz run {run_id} using seed {seed}")
+        run_boltz(
+            output_dir=out_path,
+            boltz_yaml_file=boltz_conf_path,
+            run_id=boltz_conf_path.stem,
+            seed=seed,
+            num_trunk_recycles=conf.num_trunk_recycles,
+            num_diffn_timesteps=conf.num_diffn_timesteps,
+            num_diffn_samples=conf.num_diffn_samples,
+            boltz_additional_cli_args=conf.boltz_additional_cli_args,
+        )
+        print(f"Boltz run {run_id} using seed {seed} completed.")
+
+    print(f"All Boltz runs for {run_id} completed. Output files are in {out_path}.")
 
 
 if __name__ == "__main__":
