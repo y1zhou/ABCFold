@@ -166,7 +166,7 @@ if [ -z "${chai_template_m8:-}" ]; then
     chai_template_m8="${abcfold_out_dir}/msa/all_chain_templates.m8"
 fi
 if [ -z "${chai_template_cif_dir:-}" ]; then
-    chai_template_cif_dir="${abcfold_out_dir}/msa/chai_templates_cif"
+    chai_template_cif_dir="${abcfold_out_dir}/msa/templates"
 fi
 
 # Set model checkpoint cache directories

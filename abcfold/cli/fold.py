@@ -72,6 +72,8 @@ def fold_chai(
     """Build structure models with Chai."""
     import os
 
+    from tqdm import tqdm
+
     from abcfold.chai1.run_chai1_abcfold import run_chai
 
     conf_path = conf_file.expanduser().resolve()
@@ -87,16 +89,22 @@ def fold_chai(
         os.environ["CHAI_TEMPLATE_CIF_FOLDER"] = str(template_cif_dir)
 
     # TODO: take advantage of num_trunk_samples when running with multiple seeds
-    run_chai(
-        abcfold_conf=conf,
-        output_dir=out_path,
-        chai_yaml_file=chai_conf_path,
-        template_hits_path=template_hits_path,
-        template_cif_dir=template_cif_dir,
-        use_esm_embeddings=use_esm_embeddings,
-        recycle_msa_subsample=recycle_msa_subsample,
-        low_memory=low_memory,
-    )
+    for seed in tqdm(conf.seeds, desc="Chai-1 run seeds"):
+        run_out_dir = run_chai(
+            output_dir=out_path,
+            chai_yaml_file=chai_conf_path,
+            seed=seed,
+            template_hits_path=template_hits_path,
+            template_cif_dir=template_cif_dir,
+            use_esm_embeddings=use_esm_embeddings,
+            recycle_msa_subsample=recycle_msa_subsample,
+            num_trunk_recycles=conf.num_trunk_recycles,
+            num_diffn_timesteps=conf.num_diffn_timesteps,
+            num_diffn_samples=conf.num_diffn_samples,
+            num_trunk_samples=conf.num_trunk_samples,
+            low_memory=low_memory,
+        )
+        print(f"Chai run output files in: {run_out_dir}")
 
 
 @app.command(name="boltz")
@@ -142,7 +150,6 @@ def fold_boltz(
             num_diffn_samples=conf.num_diffn_samples,
             boltz_additional_cli_args=conf.boltz_additional_cli_args,
         )
-        print(f"Boltz run {run_id} using seed {seed} completed.")
 
     print(f"All Boltz runs for {run_id} completed. Output files are in {out_path}.")
 
