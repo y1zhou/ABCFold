@@ -152,8 +152,9 @@ def postprocess(
         alphafold_models["models"] + boltz_models["models"] + chai_models["models"]
     )
     # Generate output page
-    import json
     import shutil
+
+    import orjson
 
     from abcfold.abcfold import HTML_DIR, HTML_TEMPLATE
     from abcfold.html.html_utils import get_model_sequence_data, render_template
@@ -174,6 +175,8 @@ def postprocess(
         output_model_path = out_path.joinpath("output_models").joinpath(output_name)
         shutil.copyfile(cif_file, output_model_path)
         output_models.append(output_model_path)
+
+    logger.info("Superimposing output models...")
     if len(output_models) > 1:
         superimpose_models(output_models)
 
@@ -193,7 +196,7 @@ def postprocess(
         "plotly_path": Path(plot_dict["plddt"]).relative_to(out_path).as_posix(),
         "chain_data": chain_data,
     }
-    results_json = json.dumps(results_dict)
+    results_json = orjson.dumps(results_dict).decode()
 
     if not out_path.joinpath(".feature_viewer").exists():
         shutil.copytree(HTML_DIR, out_path / ".feature_viewer")

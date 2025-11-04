@@ -1,4 +1,4 @@
-import json
+import orjson
 import logging
 import re
 import warnings
@@ -758,8 +758,8 @@ class ConfidenceJsonFile(FileBase):
 
     def load_json_file(self):
         # load the json file
-        with open(self.pathway, "r") as f:
-            data = json.load(f)
+        with open(self.pathway, "rb") as f:
+            data = orjson.loads(f.read())
 
         return data
 

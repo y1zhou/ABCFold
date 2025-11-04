@@ -1,9 +1,8 @@
-import json
 from itertools import zip_longest
 from pathlib import Path
-from typing import List, Union
 
 import numpy as np
+import orjson
 import pandas as pd
 from Bio.Align import PairwiseAligner
 
@@ -46,7 +45,6 @@ class Af3Pae:
             reordered_matrix = np.zeros_like(pae_matrix)
             for i in range(len(pae_matrix)):
                 for j in range(len(pae_matrix)):
-
                     reordered_matrix[order_mapping[i], order_mapping[j]] = pae_matrix[
                         i, j
                     ]
@@ -174,20 +172,20 @@ class Af3Pae:
     def __init__(self, af3_scores: dict):
         self.scores = af3_scores
 
-    def to_file(self, file_path: Union[str, Path]):
-        with open(file_path, "w") as f:
-            json.dump(self.scores, f, indent=4)
+    def to_file(self, file_path: str | Path):
+        with open(file_path, "wb") as f:
+            f.write(orjson.dumps(self.scores))
 
 
 def flatten(xss):
     return [x for xs in xss for x in xs]
 
 
-def get_gap_indicies(*cif_objs) -> List[np.ndarray]:
-    """
-    Get the the gaps inbetween cif objects. Sometimes there is a discrepency
-    between chain lengths between the modelling programs. This function is
-    used to find where these discrepencies are.
+def get_gap_indicies(*cif_objs) -> list[np.ndarray]:
+    """Get the the gaps inbetween cif objects.
+
+    Sometimes there is a discrepency between chain lengths between the modelling programs.
+    This function is used to find where these discrepencies are.
 
     Args:
         *cif_objs: Multiple cif objects
@@ -237,7 +235,6 @@ def get_gap_indicies(*cif_objs) -> List[np.ndarray]:
                 indicies.append(alignment[0].indices[1])
         else:
             for _ in cif_objs:
-
                 indicies.append(np.array([1] * chain_lengths[0][chain_id]))
 
     indicies = interleave_repeated(
@@ -278,11 +275,9 @@ def insert_none_by_minus_one(indices, values):
 
 
 def make_dummy_m8_file(run_json, output_dir):
-    """
-    Make a dummy m8 file with the templates from the run JSON file
-    """
-    with open(run_json) as f:
-        input_json = json.load(f)
+    """Make a dummy m8 file with the templates from the run JSON file."""
+    with open(run_json, "rb") as f:
+        input_json = orjson.loads(f.read())
 
     templates = {}
     for sequence in input_json["sequences"]:
