@@ -174,7 +174,7 @@ class AlphafoldOutput:
             cif_file (CifFile): CifFile object to update the chain labels for
 
         """
-        if [chain.id for chain in cif_file.get_chains()] == self.get_chain_ids():
+        if [chain.name for chain in cif_file.get_chains()] == self.get_chain_ids():
             return cif_file
         cif_file.reorder_chains(self.get_chain_ids())
         return cif_file

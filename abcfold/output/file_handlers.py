@@ -1,3 +1,5 @@
+"""File handlers for different output file types."""
+
 import logging
 import re
 import warnings
@@ -5,6 +7,7 @@ from abc import ABC
 from enum import Enum
 from pathlib import Path
 
+import gemmi
 import numpy as np
 import orjson
 from Bio.PDB import MMCIFIO, Chain, MMCIFParser, Model
@@ -12,7 +15,6 @@ from Bio.PDB.Atom import Atom
 from Bio.PDB.kdtrees import KDTree
 from Bio.PDB.Polypeptide import is_aa
 from Bio.PDB.Residue import Residue
-from Bio.PDB.Superimposer import Superimposer
 from Bio.SeqUtils import seq1
 
 from abcfold.output.atoms import VANDERWALLS
@@ -57,6 +59,7 @@ class ResidueCountType(Enum):
 
     @classmethod
     def values(cls):
+        """Get the values of the enum members."""
         return [value.value for value in cls.__members__.values()]
 
 
@@ -64,17 +67,22 @@ class FileBase(ABC):
     """Abstract base class for the different file types."""
 
     def __init__(self, pathway: str | Path):
+        """File path and suffix names."""
         self.pathway = Path(pathway)
         self.suffix = self.pathway.suffix[1:]
 
     def __str__(self):
+        """Return the string representation of the file path."""
         return str(self.pathway)
 
     def __repr__(self):
+        """Return the class representation of the file path."""
         return f"{self.__class__.__name__}({self.pathway})"
 
 
 class NpzFile(FileBase):
+    """File handler for numpy zip files."""
+
     def __init__(self, npz_file: str | Path):
         """Object to handle npz files.
 
@@ -91,10 +99,13 @@ class NpzFile(FileBase):
         self.data = self.load_npz_file()
 
     def load_npz_file(self) -> dict:
+        """Load the npz file into a dictionary."""
         return dict(np.load(self.npz_file, allow_pickle=True))
 
 
 class NpyFile(FileBase):
+    """File handler for numpy array files."""
+
     def __init__(self, npy_file: str | Path):
         """Object to handle npy files.
 
@@ -111,10 +122,13 @@ class NpyFile(FileBase):
         self.data = self.load_npy_file()
 
     def load_npy_file(self) -> np.ndarray:
+        """Load the npy file into a numpy array."""
         return np.load(self.npy_file, allow_pickle=True)
 
 
 class CifFile(FileBase):
+    """Cif file handler for structural models."""
+
     def __init__(self, cif_file: str | Path, input_params: dict | None = None):
         """Object to handle cif files.
 
@@ -154,6 +168,7 @@ class CifFile(FileBase):
 
     @property
     def name(self):
+        """Filename without suffix."""
         return self.__name
 
     @name.setter
@@ -166,6 +181,9 @@ class CifFile(FileBase):
     @property
     def plddts(self):
         """The pLDDT scores for each atom in the model."""
+        if self.__plddts is not None:
+            return self.__plddts
+
         self.__plddts = [
             plddts for plddts in self.get_plddt_per_atom().values() for plddts in plddts
         ]
@@ -174,6 +192,9 @@ class CifFile(FileBase):
     @property
     def residue_plddts(self):
         """The pLDDT scores for each residue in the model."""
+        if self.__residue_plddts is not None:
+            return self.__residue_plddts
+
         self.__residue_plddts = [
             plddts
             for plddts in self.get_plddt_per_residue().values()
@@ -189,34 +210,49 @@ class CifFile(FileBase):
     @property
     def ligand_plddts(self):
         """The pLDDT scores for each ligand in the model."""
+        if self.__ligand_plddts is not None:
+            return self.__ligand_plddts
+
         self.__ligand_plddts = self.get_plddt_per_ligand()
         return self.__ligand_plddts
 
     @property
     def h_score(self):
         """The H score for the model."""
+        if self.__h_score is not None:
+            return self.__h_score
+
         self.__h_score = self.calculate_h_score()
         return self.__h_score
 
-    def load_cif_file(self):
-        """Load the cif file using BioPython."""
-        parser = MMCIFParser(QUIET=True)
-        return parser.get_structure(self.pathway.stem, self.pathway)
+    def load_cif_file(self) -> gemmi.Structure:
+        """Load the cif file using Gemmi."""
+        st = gemmi.read_structure(str(self.pathway), format=gemmi.CoorFormat.Detect)
+        st.setup_entities()
+        return st
+
+    @property
+    def model1(self) -> gemmi.Model:
+        """Get the first model in the structure."""
+        return self.model[0]
 
     def get_chains(self):
-        return self.model[0]
+        """Alias for self.model1 for compatibility with prev versions of ABCFold2."""
+        return self.model1
 
     def chain_lengths(
         self,
         mode=ModelCount.RESIDUES,
         ligand_atoms=False,
         ptm_atoms=False,
-    ) -> dict:
+    ) -> dict[str, int]:
         """Get the length of each chain in the model.
 
         Args:
-            mode (ModelCount): Enum class specifying the mode to use
-            Note: For ligands the length will always be the number of atoms
+            mode (ModelCount): Enum class specifying the mode to use.
+                Note: For ligands the length will always be the number of atoms
+            ligand_atoms (bool): Whether to count the number of atoms for ligands.
+            ptm_atoms (bool): Whether to count the number of atoms for PTMs.
 
         Returns:
             dict: Dictionary containing the chain id and the length of the chain
@@ -225,28 +261,27 @@ class CifFile(FileBase):
             ValueError: If the mode is not valid
 
         """
-        chains = self.get_chains()
+        model = self.model1
         if mode == ModelCount.ALL or mode == ModelCount.ALL.value:
             # return {
             #     chain.id: len([atom for resiude in chain for atom in resiude])
-            #     for chain in chains
+            #     for chain in model
             # }
             chain_lengths: dict = {}
-            for chain in chains:
-                if chain.id in chain_lengths:
-                    chain_lengths[chain.id] += len(
-                        [atom for resiude in chain for atom in resiude]
-                    )
+            for chain in model:
+                chain: gemmi.Chain
+                if chain.name in chain_lengths:
+                    chain_lengths[chain.name] += sum(len(residue) for residue in chain)
                 else:
-                    chain_lengths[chain.id] = len(
-                        [atom for resiude in chain for atom in resiude]
-                    )
+                    chain_lengths[chain.name] = sum(len(residue) for residue in chain)
 
             return chain_lengths
 
         elif mode == ModelCount.RESIDUES or mode == ModelCount.RESIDUES.value:
+            # TODO
             residue_counts: dict = {}
-            for chain in chains:
+            for chain in model:
+                chain: gemmi.Chain
                 if self.check_other(chain, ["protein", "rna", "dna"]) and ptm_atoms:
                     counter = 0
                     for residue in chain:
@@ -289,6 +324,7 @@ class CifFile(FileBase):
             chain
 
         """
+        # TODO
         from abcfold.output.utils import flatten
 
         chains = self.get_chains()
@@ -319,6 +355,7 @@ class CifFile(FileBase):
             float: The H score for the model
 
         """
+        # TODO
         score = 0
         for i in reversed(range(1, 101)):
             if (100.0 / len(self.plddts)) * np.sum(np.array(self.plddts) >= i) >= i:
@@ -333,6 +370,7 @@ class CifFile(FileBase):
             dict : Chain ID and sequence data
 
         """
+        # TODO
         sequence_data = {}
         for chain in self.model[0]:
             if self.check_ligand(chain):
@@ -352,6 +390,7 @@ class CifFile(FileBase):
             dict: Dictionary containing the chain id and the pLDDT scores for each atom
 
         """
+        # TODO
         plddt: dict[str, list] = {}
         for chain in self.model[0]:
             for residue in chain:
@@ -374,6 +413,7 @@ class CifFile(FileBase):
             residue
 
         """
+        # TODO
         plddts: dict[str, list] = {}
 
         if method not in ResidueCountType.values():
@@ -435,6 +475,7 @@ class CifFile(FileBase):
             dict: Dictionary containing the chain id and the pLDDT scores for each atom
 
         """
+        # TODO
         plddt: dict[str, list] = {}
         for chain in self.model[0]:
             if self.check_ligand(chain):
@@ -456,28 +497,28 @@ class CifFile(FileBase):
             bool: True if the chain is a ligand, False otherwise
 
         """
+        # TODO
         return self.check_other(chain, ["ligand"])
 
-    def check_other(self, chain: Chain, check_list) -> bool:
+    def check_other(self, chain: gemmi.Chain, check_list) -> bool:
+        """Check if the chain is of a certain type."""
         sequences = self.input_params.get("sequences")
         if sequences is None:
-            # logger.warning("Unable to gain sequence infromation from input file")
+            # logger.warning("Unable to gain sequence information from input file")
             return False
         for sequence in sequences:
             for sequence_type, sequence_data in sequence.items():
                 if sequence_type in check_list:
                     if "id" not in sequence_data:
                         continue
-                    if hasattr(chain, "id"):
-                        chain_id = chain.id
+                    if hasattr(chain, "name"):
+                        chain_id = chain.name
                     else:
                         chain_id = chain
                     if isinstance(sequence_data["id"], str):
-                        if chain_id == sequence_data["id"]:
-                            return True
+                        return chain_id == sequence_data["id"]
                     elif isinstance(sequence_data["id"], list):
-                        if chain_id in sequence_data["id"]:
-                            return True
+                        return chain_id in sequence_data["id"]
         return False
 
     def relabel_chains(
@@ -487,11 +528,15 @@ class CifFile(FileBase):
 
         Args:
             chain_ids (List[str]): List of chain ids to relabel the chains
+            link_ids (Optional[dict]): Dictionary containing the chain ids to link
+                ligands together. The keys are the new chain ids and the values are
+                lists of chain ids to link together.
 
         Returns:
             None
 
         """
+        # TODO
         chain_ids = chain_ids.copy()
         structure = self.model[0]
         old_new_chain_id = {}
@@ -533,10 +578,14 @@ class CifFile(FileBase):
         self.update()
 
     def update(self):
+        """Update the cif file after making changes to the model."""
+        # TODO
         self.to_file(self.pathway)
         self = CifFile(self.pathway, self.input_params)
 
     def reorder_chains(self, new_chain_ids: list[str]):
+        """Rearrange the order of chains in a structure model."""
+        # TODO
         assert sorted([chain.id for chain in self.get_chains()]) == sorted(
             new_chain_ids
         ), (
@@ -561,11 +610,14 @@ for reordering"
 
         Args:
             threshold: The distance threshold for a clash.
+            bucket: The number of atoms in each bucket for the KDTree.
+            clash_cutoff: The cutoff for a clash.
 
         Returns:
             A list of clashes.
 
         """
+        # TODO
         atoms = self.get_atoms()
         coords = np.array(
             [atom.get_coord() for atom in atoms],
@@ -617,15 +669,8 @@ for reordering"
         return (clashes_atoms, clashes_residues)
 
     def get_atoms(self, chain_id=None) -> list:
-        """Get the atoms of the structure.
-
-        Args:
-            threshold: The distance threshold for a clash.
-
-        Returns:
-            A list of clashes.
-
-        """
+        """Get the atoms of the structure."""
+        # TODO
         if chain_id is not None:
             return [
                 atom
@@ -645,6 +690,7 @@ for reordering"
             None
 
         """
+        # TODO
         io = MMCIFIO()
         io.set_structure(self.model)
 
@@ -711,8 +757,10 @@ for reordering"
 
 
 class ConfidenceJsonFile(FileBase):
+    """Json file handler for confidence scores."""
+
     def __init__(self, json_file: str | Path):
-        """Object to handle json files
+        """Object to handle json files.
 
         Args:
             json_file (Union[str, Path]): Path to the json file
@@ -726,7 +774,7 @@ class ConfidenceJsonFile(FileBase):
         self.data = self.load_json_file()
 
     def load_json_file(self):
-        # load the json file
+        """Read the json file into a dict."""
         with open(self.pathway, "rb") as f:
             data = orjson.loads(f.read())
 
@@ -747,8 +795,6 @@ def superpose_models(
         None
 
     """
-    import gemmi
-
     structure = gemmi.read_structure(
         str(models_list[0]), format=gemmi.CoorFormat.Detect
     )
@@ -793,44 +839,3 @@ def superpose_models(
         sup = gemmi.superpose_positions(ref_atoms, alt_atoms)
         alt_model.transform_pos_and_adp(sup.transform)
         alt_structure.make_mmcif_document().write_file(str(model))
-
-    # parser = MMCIFParser(QUIET=True)
-    # structure = parser.get_structure(Path(models_list[0]).stem, Path(models_list[0]))
-    # ref_model = structure[0]
-
-    # for model in models_list[1:]:
-    #     alt_structure = parser.get_structure(Path(model).stem, Path(model))
-    #     alt_model = alt_structure[0]
-
-    #     ref_atoms = []
-    #     alt_atoms = []
-    #     for ref_chain, alt_chain in zip(ref_model, alt_model, strict=False):
-    #         for ref_res, alt_res in zip(ref_chain, alt_chain, strict=False):
-    #             if ref_res.resname != alt_res.resname or ref_res.id != alt_res.id:
-    #                 pass
-
-    #             # Handle nucleotides and proteins differently
-    #             if ref_res.resname in ["DA", "DT", "DG", "DC"]:
-    #                 ref_atoms.append(ref_res["C1'"])
-    #                 alt_atoms.append(alt_res["C1'"])
-    #             elif ref_res.resname in ["A", "U", "G", "C", "T"]:
-    #                 ref_atoms.append(ref_res["C1'"])
-    #                 alt_atoms.append(alt_res["C1'"])
-    #             elif "CA" in ref_res:
-    #                 ref_atoms.append(ref_res["CA"])
-    #                 alt_atoms.append(alt_res["CA"])
-    #             else:  # Ignore anything else
-    #                 pass
-
-    #     if len(ref_atoms) == 0 or len(alt_atoms) == 0:
-    #         logger.warning(
-    #             f"No matching atoms found for superposition in {model}. Skipping."
-    #         )
-    #     else:
-    #         super_imposer = Superimposer()
-    #         super_imposer.set_atoms(ref_atoms, alt_atoms)
-    #         super_imposer.apply(alt_model.get_atoms())
-
-    #         io = MMCIFIO()
-    #         io.set_structure(alt_structure)
-    #         io.save(str(model))  # overwrite the original file
