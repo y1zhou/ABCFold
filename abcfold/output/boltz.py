@@ -2,9 +2,16 @@ import logging
 from pathlib import Path
 from typing import Union
 
+from tqdm import tqdm
+
 from abcfold.boltz.af3_to_boltz import BoltzYaml
-from abcfold.output.file_handlers import (CifFile, ConfidenceJsonFile,
-                                          FileTypes, ModelCount, NpzFile)
+from abcfold.output.file_handlers import (
+    CifFile,
+    ConfidenceJsonFile,
+    FileTypes,
+    ModelCount,
+    NpzFile,
+)
 from abcfold.output.utils import Af3Pae
 
 logger = logging.getLogger("logger")
@@ -129,7 +136,7 @@ class BoltzOutput:
         Function to process the output of a Boltz run
         """
         file_groups = {}
-        for pathway in self.output_dirs:
+        for pathway in tqdm(self.output_dirs, desc="Processing Boltz outputs"):
             seed = pathway.name.split("_")[-1]
             if seed not in file_groups:
                 file_groups[seed] = {}
@@ -156,7 +163,7 @@ class BoltzOutput:
                     file_groups[seed][number].append(file_)
 
         seed_dict = {}
-        for seed, models in file_groups.items():
+        for seed, models in tqdm(file_groups.items(), desc="Collecting Boltz scores"):
             model_number_file_type_file = {}
             for model_number, files in models.items():
                 intermediate_dict = {}

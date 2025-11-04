@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from tqdm import tqdm
 
 from abcfold.output.boltz import BoltzOutput
 from abcfold.output.chai import ChaiOutput
@@ -87,6 +88,7 @@ def postprocess(
     logger.info("Generating plots...")
     plot_dict = plots(found_models, out_path / PLOTS_DIR)
 
+    logger.info("Comparing output models...")
     programs_run = []
     cif_models = [
         cif_file
@@ -102,6 +104,7 @@ def postprocess(
     boltz_models = {"models": []}
     if boltz_results_dir is not None:
         programs_run.append("Boltz")
+        logger.info("Post-processing Boltz models...")
         for seed in bo.output.keys():
             for idx in bo.output[seed].keys():
                 model = bo.output[seed][idx]["cif"]
@@ -124,6 +127,7 @@ def postprocess(
     chai_models = {"models": []}
     if chai_results_dir is not None:
         programs_run.append("Chai-1")
+        logger.info("Post-processing Chai models...")
         for seed in co.output.keys():
             for idx in co.output[seed].keys():
                 if idx >= 0:
@@ -147,7 +151,6 @@ def postprocess(
     combined_models = (
         alphafold_models["models"] + boltz_models["models"] + chai_models["models"]
     )
-
     # Generate output page
     import json
     import shutil
@@ -158,22 +161,23 @@ def postprocess(
 
     (out_path / "output_models").mkdir(exist_ok=True)
     output_models = []
+    logger.info("Preparing output model files...")
     for model in combined_models:
         cif_file = out_path.joinpath(model["model_path"])
-        if model["model_source"] == "AlphaFold3":
-            output_name = "af3_model_" + model["model_id"][-1] + ".cif"
-        elif model["model_source"] == "Boltz":
-            output_name = "boltz_model_" + model["model_id"][-1] + ".cif"
-        elif model["model_source"] == "Chai-1":
-            output_name = "chai_model_" + model["model_id"][-1] + ".cif"
-        shutil.copy(
-            cif_file,
-            out_path.joinpath("output_models").joinpath(output_name),
-        )
-        output_models.append(out_path.joinpath("output_models").joinpath(output_name))
+        # if model["model_source"] == "AlphaFold3":
+        #     output_name = "af3_model_" + model["model_id"][-1] + ".cif"
+        # elif model["model_source"] == "Boltz":
+        #     output_name = "boltz_model_" + model["model_id"][-1] + ".cif"
+        # elif model["model_source"] == "Chai-1":
+        #     output_name = "chai_model_" + model["model_id"][-1] + ".cif"
+        output_name = f"{model['model_id']}.cif"
+        output_model_path = out_path.joinpath("output_models").joinpath(output_name)
+        shutil.copyfile(cif_file, output_model_path)
+        output_models.append(output_model_path)
     if len(output_models) > 1:
         superimpose_models(output_models)
 
+    logger.info("Preparing output score files...")
     sequence_data = get_model_sequence_data(cif_models)
     sequence = ""
     for key in sequence_data.keys():
@@ -205,6 +209,7 @@ def postprocess(
         programs = "Structure predictions for: " + programs_run[0]
 
     # Create the index page
+    logger.info("Generating output HTML page...")
     HTML_OUT = out_path.joinpath("index.html")
     html_out = Path(HTML_OUT).resolve()
     render_template(
@@ -336,7 +341,7 @@ class PatchedBoltzOutput(BoltzOutput):
         from abcfold.output.utils import Af3Pae
 
         new_pae_files = {}
-        for seed in self.seeds:
+        for seed in tqdm(self.seeds, desc="Converting Boltz PAE to AF3 format"):
             for pae_file, cif_file in zip(
                 self.pae_files[seed], self.cif_files[seed], strict=True
             ):
@@ -411,7 +416,7 @@ class PatchedChaiOutput(ChaiOutput):
 
         file_groups = {}
 
-        for pathway in self.output_dirs:
+        for pathway in tqdm(self.output_dirs, desc="Processing Chai output"):
             seed = pathway.name.split("_")[-1]
             if seed not in file_groups:
                 file_groups[seed] = {}
@@ -450,7 +455,7 @@ class PatchedChaiOutput(ChaiOutput):
                     file_groups[seed][number].append(file_)
 
         seed_dict = {}
-        for seed, models in file_groups.items():
+        for seed, models in tqdm(file_groups.items(), desc="Collecting Chai scores"):
             model_number_file_type_file = {}
             pae_file_data = None
             if -1 in models:
@@ -505,7 +510,7 @@ class PatchedChaiOutput(ChaiOutput):
         from abcfold.output.utils import Af3Pae
 
         new_pae_files = {}
-        for seed in self.seeds:
+        for seed in tqdm(self.seeds, desc="Converting Chai PAE to AF3 format"):
             for i, (pae_file, cif_file) in enumerate(
                 zip(self.pae_files[seed], self.cif_files[seed], strict=True)
             ):
