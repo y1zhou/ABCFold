@@ -38,6 +38,8 @@ dependencies = [
     "pydantic>=2.12.3",
     "typer>=0.20.0",
     "pyyaml>=6.0.3",
+    "orjson>=3.10,<4",
+    "gemmi==0.6.5",     # consistent with Boltz
 ]
 
 [project.urls]

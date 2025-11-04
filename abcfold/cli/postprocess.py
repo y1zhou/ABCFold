@@ -47,6 +47,13 @@ def postprocess(
             help="Directory containing Chai results to be post-processed.",
         ),
     ] = None,
+    superpose_chains: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated chain IDs to use for superposition (e.g., 'A,B')."
+            " Defaults to all chains.",
+        ),
+    ] = None,
 ):
     """Run post-processing steps for ABCFold.
 
@@ -158,7 +165,7 @@ def postprocess(
 
     from abcfold.abcfold import HTML_DIR, HTML_TEMPLATE
     from abcfold.html.html_utils import get_model_sequence_data, render_template
-    from abcfold.output.file_handlers import superpose_models as superimpose_models
+    from abcfold.output.file_handlers import superpose_models
 
     (out_path / "output_models").mkdir(exist_ok=True)
     output_models = []
@@ -173,12 +180,13 @@ def postprocess(
         #     output_name = "chai_model_" + model["model_id"][-1] + ".cif"
         output_name = f"{model['model_id']}.cif"
         output_model_path = out_path.joinpath("output_models").joinpath(output_name)
-        shutil.copyfile(cif_file, output_model_path)
+        if not output_model_path.exists():
+            shutil.copyfile(cif_file, output_model_path)
         output_models.append(output_model_path)
 
     logger.info("Superimposing output models...")
     if len(output_models) > 1:
-        superimpose_models(output_models)
+        superpose_models(output_models, superpose_chains)
 
     logger.info("Preparing output score files...")
     sequence_data = get_model_sequence_data(cif_models)

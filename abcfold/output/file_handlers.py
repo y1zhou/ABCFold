@@ -1,13 +1,12 @@
-import orjson
 import logging
 import re
 import warnings
 from abc import ABC
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import orjson
 from Bio.PDB import MMCIFIO, Chain, MMCIFParser, Model
 from Bio.PDB.Atom import Atom
 from Bio.PDB.kdtrees import KDTree
@@ -24,9 +23,7 @@ logger = logging.getLogger("logger")
 
 
 class FileTypes(Enum):
-    """
-    Enum class for the different file types
-    """
+    """Enum class for the different file types."""
 
     NPZ = "npz"
     NPY = "npy"
@@ -35,26 +32,24 @@ class FileTypes(Enum):
 
     @classmethod
     def values(cls):
+        """Get the values of the enum members."""
         return [value.value for value in cls.__members__.values()]
 
 
 class ModelCount(Enum):
-    """
-    Enum class for the different model count types
-    """
+    """Enum class for the different model count types."""
 
     ALL = "all"
     RESIDUES = "residues"
 
     @classmethod
     def values(cls):
+        """Get the values of the enum members."""
         return [value.value for value in cls.__members__.values()]
 
 
 class ResidueCountType(Enum):
-    """
-    Enum class for the different residue count types
-    """
+    """Enum class for the different residue count types."""
 
     AVERAGE = "average"
     CARBONALPHA = "carbonalpha"
@@ -66,11 +61,9 @@ class ResidueCountType(Enum):
 
 
 class FileBase(ABC):
-    """
-    Abstract base class for the different file types
-    """
+    """Abstract base class for the different file types."""
 
-    def __init__(self, pathway: Union[str, Path]):
+    def __init__(self, pathway: str | Path):
         self.pathway = Path(pathway)
         self.suffix = self.pathway.suffix[1:]
 
@@ -82,10 +75,8 @@ class FileBase(ABC):
 
 
 class NpzFile(FileBase):
-
-    def __init__(self, npz_file: Union[str, Path]):
-        """
-        Object to handle npz files
+    def __init__(self, npz_file: str | Path):
+        """Object to handle npz files.
 
         Args:
             npz_file (Union[str, Path]): Path to the npz file
@@ -104,9 +95,8 @@ class NpzFile(FileBase):
 
 
 class NpyFile(FileBase):
-    def __init__(self, npy_file: Union[str, Path]):
-        """
-        Object to handle npy files
+    def __init__(self, npy_file: str | Path):
+        """Object to handle npy files.
 
         Args:
             npy_file (Union[str, Path]): Path to the npy file
@@ -114,8 +104,8 @@ class NpyFile(FileBase):
         Attributes:
             npy_file (Path): Path to the npy file
             data (np.ndarray): Numpy array containing the data from the np
-        """
 
+        """
         super().__init__(npy_file)
         self.npy_file = Path(npy_file)
         self.data = self.load_npy_file()
@@ -125,10 +115,8 @@ class NpyFile(FileBase):
 
 
 class CifFile(FileBase):
-
-    def __init__(self, cif_file: Union[str, Path], input_params: Optional[dict] = None):
-        """
-        Object to handle cif files
+    def __init__(self, cif_file: str | Path, input_params: dict | None = None):
+        """Object to handle cif files.
 
         Args:
             cif_file (Union[str, Path]): Path to the cif file
@@ -146,6 +134,7 @@ class CifFile(FileBase):
             plddts (list): List containing the pLDDT scores for each atom
             residue_plddts (list): List containing the pLDDT scores for each residue
             name (str): Name given to the model
+
         """
         if input_params is None:
             self.input_params = {}
@@ -176,9 +165,7 @@ class CifFile(FileBase):
 
     @property
     def plddts(self):
-        """
-        The pLDDT scores for each atom in the model
-        """
+        """The pLDDT scores for each atom in the model."""
         self.__plddts = [
             plddts for plddts in self.get_plddt_per_atom().values() for plddts in plddts
         ]
@@ -186,10 +173,7 @@ class CifFile(FileBase):
 
     @property
     def residue_plddts(self):
-        """
-        The pLDDT scores for each residue in the model
-        """
-
+        """The pLDDT scores for each residue in the model."""
         self.__residue_plddts = [
             plddts
             for plddts in self.get_plddt_per_residue().values()
@@ -199,31 +183,23 @@ class CifFile(FileBase):
 
     @property
     def average_plddt(self):
-        """
-        The average pLDDT score for the model
-        """
+        """The average pLDDT score for the model."""
         return float(np.mean(self.plddts))
 
     @property
     def ligand_plddts(self):
-        """
-        The pLDDT scores for each ligand in the model
-        """
+        """The pLDDT scores for each ligand in the model."""
         self.__ligand_plddts = self.get_plddt_per_ligand()
         return self.__ligand_plddts
 
     @property
     def h_score(self):
-        """
-        The H score for the model
-        """
+        """The H score for the model."""
         self.__h_score = self.calculate_h_score()
         return self.__h_score
 
     def load_cif_file(self):
-        """
-        Load the cif file using BioPython
-        """
+        """Load the cif file using BioPython."""
         parser = MMCIFParser(QUIET=True)
         return parser.get_structure(self.pathway.stem, self.pathway)
 
@@ -236,8 +212,7 @@ class CifFile(FileBase):
         ligand_atoms=False,
         ptm_atoms=False,
     ) -> dict:
-        """
-        Function to get the length of each chain in the model
+        """Get the length of each chain in the model.
 
         Args:
             mode (ModelCount): Enum class specifying the mode to use
@@ -248,10 +223,10 @@ class CifFile(FileBase):
 
         Raises:
             ValueError: If the mode is not valid
+
         """
         chains = self.get_chains()
         if mode == ModelCount.ALL or mode == ModelCount.ALL.value:
-
             # return {
             #     chain.id: len([atom for resiude in chain for atom in resiude])
             #     for chain in chains
@@ -307,12 +282,12 @@ class CifFile(FileBase):
             raise ValueError()
 
     def token_residue_ids(self) -> dict:
-        """
-        Function to get the residue ids for each chain in the model
+        """Get the residue ids for each chain in the model.
 
         Returns:
             dict: Dictionary containing the chain id and the residue ids for each
             chain
+
         """
         from abcfold.output.utils import flatten
 
@@ -338,13 +313,12 @@ class CifFile(FileBase):
         return residue_ids
 
     def calculate_h_score(self):
-        """
-        Calculate the H score for the model
+        """Calculate the H score for the model.
 
         Returns:
             float: The H score for the model
-        """
 
+        """
         score = 0
         for i in reversed(range(1, 101)):
             if (100.0 / len(self.plddts)) * np.sum(np.array(self.plddts) >= i) >= i:
@@ -353,12 +327,11 @@ class CifFile(FileBase):
         return score
 
     def get_model_sequence_data(self) -> dict:
-        """
-        Get the sequence for each chain and ligand in the model, used internally
-        for plotting
+        """Get the sequence for each chain and ligand in the model, used internally for plotting.
 
         Returns:
             dict : Chain ID and sequence data
+
         """
         sequence_data = {}
         for chain in self.model[0]:
@@ -373,15 +346,14 @@ class CifFile(FileBase):
         return sequence_data
 
     def get_plddt_per_atom(self) -> dict:
-        """
-        Get the pLDDT scores for each atom in the model
+        """Get the pLDDT scores for each atom in the model.
 
         Returns:
             dict: Dictionary containing the chain id and the pLDDT scores for each atom
-        """
-        plddt: Dict[str, list] = {}
-        for chain in self.model[0]:
 
+        """
+        plddt: dict[str, list] = {}
+        for chain in self.model[0]:
             for residue in chain:
                 for atom in residue:
                     if chain.id in plddt:
@@ -392,8 +364,7 @@ class CifFile(FileBase):
         return plddt
 
     def get_plddt_per_residue(self, method=ResidueCountType.AVERAGE.value) -> dict:
-        """
-        Get the pLDDT scores for each residue in the model
+        """Get the pLDDT scores for each residue in the model.
 
         Args:
             method (ResidueCountType): Enum class specifying the method to use
@@ -401,8 +372,9 @@ class CifFile(FileBase):
         Returns:
             dict: Dictionary containing the chain id and the pLDDT scores for each
             residue
+
         """
-        plddts: Dict[str, list] = {}
+        plddts: dict[str, list] = {}
 
         if method not in ResidueCountType.values():
             logger.error(
@@ -451,19 +423,19 @@ class CifFile(FileBase):
         plddt_lengths = {k: len(v) for (k, v) in plddts.items()}
         chain_lengths = self.chain_lengths(mode="residues", ligand_atoms=True)
         for chain_id in plddt_lengths:
-            assert (
-                chain_lengths[chain_id] == plddt_lengths[chain_id]
-            ), f"{chain_id}, {chain_lengths[chain_id]} != {plddt_lengths[chain_id]}"
+            assert chain_lengths[chain_id] == plddt_lengths[chain_id], (
+                f"{chain_id}, {chain_lengths[chain_id]} != {plddt_lengths[chain_id]}"
+            )
         return plddts
 
     def get_plddt_per_ligand(self) -> dict:
-        """
-        Get the pLDDT scores for each ligand in the model
+        """Get the pLDDT scores for each ligand in the model.
 
         Returns:
             dict: Dictionary containing the chain id and the pLDDT scores for each atom
+
         """
-        plddt: Dict[str, list] = {}
+        plddt: dict[str, list] = {}
         for chain in self.model[0]:
             if self.check_ligand(chain):
                 for residue in chain:
@@ -475,16 +447,15 @@ class CifFile(FileBase):
         return plddt
 
     def check_ligand(self, chain: Chain) -> bool:
-        """
-        Check if the chain is a ligand
+        """Check if the chain is a ligand.
 
         Args:
             chain (Chain): BioPython chain object
 
         Returns:
             bool: True if the chain is a ligand, False otherwise
-        """
 
+        """
         return self.check_other(chain, ["ligand"])
 
     def check_other(self, chain: Chain, check_list) -> bool:
@@ -510,18 +481,17 @@ class CifFile(FileBase):
         return False
 
     def relabel_chains(
-        self, chain_ids: List[str], link_ids: Optional[dict] = None
+        self, chain_ids: list[str], link_ids: dict | None = None
     ) -> None:
-        """
-        Relabel the chains in the model
+        """Relabel the chains in the model.
 
         Args:
             chain_ids (List[str]): List of chain ids to relabel the chains
 
         Returns:
             None
-        """
 
+        """
         chain_ids = chain_ids.copy()
         structure = self.model[0]
         old_new_chain_id = {}
@@ -548,7 +518,6 @@ class CifFile(FileBase):
                 for _ in link_ids[chain]:
                     old_new_chain_id[chain_names[old_chain_label_counter]] = chain
                     for residue in structure[chain_names[old_chain_label_counter]]:
-
                         residue.id = (residue.id[0], ligand_no_added, residue.id[2])
                         ligand_no_added += 1
                     old_chain_label_counter += 1
@@ -558,21 +527,22 @@ class CifFile(FileBase):
         for chain_to_rename in structure:
             chain_to_rename.id = old_new_chain_id[chain_to_rename.id]
 
-        assert old_chain_label_counter == len(
-            self.get_chains()
-        ), "Number of chain ids must match the number of chains"
+        assert old_chain_label_counter == len(self.get_chains()), (
+            "Number of chain ids must match the number of chains"
+        )
         self.update()
 
     def update(self):
         self.to_file(self.pathway)
         self = CifFile(self.pathway, self.input_params)
 
-    def reorder_chains(self, new_chain_ids: List[str]):
-
+    def reorder_chains(self, new_chain_ids: list[str]):
         assert sorted([chain.id for chain in self.get_chains()]) == sorted(
             new_chain_ids
-        ), "The chain ids need to be identical to what is in the model already \
+        ), (
+            "The chain ids need to be identical to what is in the model already \
 for reordering"
+        )
 
         new_model = Model.Model(0)
 
@@ -583,12 +553,11 @@ for reordering"
 
     def check_clashes(
         self,
-        threshold: Union[int, float] = 3.4,
+        threshold: int | float = 3.4,
         bucket: int = 10,
         clash_cutoff: float = 0.63,
-    ) -> Tuple[List[Tuple[Atom, Atom]], List[Tuple[Residue, Residue]]]:
-        """
-        Check for clashes between atoms in different chains
+    ) -> tuple[list[tuple[Atom, Atom]], list[tuple[Residue, Residue]]]:
+        """Check for clashes between atoms in different chains.
 
         Args:
             threshold: The distance threshold for a clash.
@@ -648,8 +617,7 @@ for reordering"
         return (clashes_atoms, clashes_residues)
 
     def get_atoms(self, chain_id=None) -> list:
-        """
-        Get the atoms of the structure
+        """Get the atoms of the structure.
 
         Args:
             threshold: The distance threshold for a clash.
@@ -667,15 +635,15 @@ for reordering"
             ]
         return [atom for chain in self.model[0] for atom in chain.get_atoms()]
 
-    def to_file(self, output_file: Union[str, Path]) -> None:
-        """
-        Save the cif file
+    def to_file(self, output_file: str | Path) -> None:
+        """Save the cif file.
 
         Args:
             output_file (Union[str, Path]): Path to save the cif file
 
         Returns:
             None
+
         """
         io = MMCIFIO()
         io.set_structure(self.model)
@@ -689,13 +657,12 @@ for reordering"
 
         self.__single_to_double_quotes(output_file)
 
-    def __single_to_double_quotes(self, file_name: Union[str, Path]) -> None:
+    def __single_to_double_quotes(self, file_name: str | Path) -> None:
         new_lines = []
-        with open(file_name, "r") as f:
+        with open(file_name) as f:
             lines = [line.rstrip() for line in f]
 
         for line in lines:
-
             single_quotes = re.compile(r"[']\w+[']{2}")
             new_lines.append(
                 single_quotes.sub(lambda x: f'"{x.group()[1:-1]}"', line, count=1)
@@ -711,8 +678,10 @@ for reordering"
 
         assert len(out_dict["_atom_site.label_asym_id"]) == len(
             atom_site_labels_asym_ids
-        ), f"Lengths must be the same, current lengths are \
+        ), (
+            f"Lengths must be the same, current lengths are \
 {len(out_dict['_atom_site.label_asym_id'])} and {len(atom_site_labels_asym_ids)}"
+        )
 
         out_dict["_atom_site.label_asym_id"] = atom_site_labels_asym_ids
 
@@ -727,7 +696,8 @@ for reordering"
             else:
                 atom_site_group_pdb.extend(
                     out_dict["_atom_site.group_PDB"][
-                        counter : counter + chain_length  # noqa: E203
+                        counter : counter
+                        + chain_length  # noqa: E203
                     ]
                 )
 
@@ -741,9 +711,8 @@ for reordering"
 
 
 class ConfidenceJsonFile(FileBase):
-    def __init__(self, json_file: Union[str, Path]):
-        """
-        Object to handle json files
+    def __init__(self, json_file: str | Path):
+        """Object to handle json files
 
         Args:
             json_file (Union[str, Path]): Path to the json file
@@ -764,42 +733,54 @@ class ConfidenceJsonFile(FileBase):
         return data
 
 
-def superpose_models(models_list: List[Union[str, Path]]) -> None:
-    """
-    Superpose the models in the list and save them to a new file
+def superpose_models(
+    models_list: list[str | Path], superpose_chains: str | None = None
+) -> None:
+    """Superpose the models in the list and save them to a new file.
 
     Args:
         models_list (List[Union[str, Path]]): List of models to superpose
+        superpose_chains: Comma-separated chain IDs to use for superposition.
+            Defaults to all chains.
 
     Returns:
         None
-    """
 
-    parser = MMCIFParser(QUIET=True)
-    structure = parser.get_structure(Path(models_list[0]).stem, Path(models_list[0]))
+    """
+    import gemmi
+
+    structure = gemmi.read_structure(
+        str(models_list[0]), format=gemmi.CoorFormat.Detect
+    )
+    structure.setup_entities()
     ref_model = structure[0]
+    nt_res_names = {"DA", "DT", "DG", "DC", "A", "U", "G", "C", "T"}
+    if superpose_chains is not None:
+        chain_ids = set(superpose_chains.split(","))
+    else:
+        chain_ids = {chain.name for chain in ref_model}
 
     for model in models_list[1:]:
-        alt_structure = parser.get_structure(Path(model).stem, Path(model))
+        alt_structure = gemmi.read_structure(str(model), format=gemmi.CoorFormat.Detect)
+        alt_structure.setup_entities()
         alt_model = alt_structure[0]
 
-        ref_atoms = []
-        alt_atoms = []
-        for (ref_chain, alt_chain) in zip(ref_model, alt_model):
-            for ref_res, alt_res in zip(ref_chain, alt_chain):
-                if ref_res.resname != alt_res.resname or ref_res.id != alt_res.id:
+        ref_atoms, alt_atoms = [], []
+        for ref_chain, alt_chain in zip(ref_model, alt_model, strict=True):
+            if ref_chain.name not in chain_ids:
+                continue
+            for ref_res, alt_res in zip(ref_chain, alt_chain, strict=True):
+                if ref_res.name != alt_res.name or ref_res.seqid != alt_res.seqid:
                     pass
 
                 # Handle nucleotides and proteins differently
-                if ref_res.resname in ["DA", "DT", "DG", "DC"]:
-                    ref_atoms.append(ref_res["C1'"])
-                    alt_atoms.append(alt_res["C1'"])
-                elif ref_res.resname in ["A", "U", "G", "C", "T"]:
-                    ref_atoms.append(ref_res["C1'"])
-                    alt_atoms.append(alt_res["C1'"])
-                elif 'CA' in ref_res:
-                    ref_atoms.append(ref_res['CA'])
-                    alt_atoms.append(alt_res['CA'])
+                ref_atom_names = {a.name for a in ref_res}
+                if ref_res.name in nt_res_names:
+                    ref_atoms.append(ref_res.sole_atom("C1'").pos)
+                    alt_atoms.append(alt_res.sole_atom("C1'").pos)
+                elif "CA" in ref_atom_names:
+                    ref_atoms.append(ref_res.get_ca().pos)
+                    alt_atoms.append(alt_res.get_ca().pos)
                 else:  # Ignore anything else
                     pass
 
@@ -807,11 +788,49 @@ def superpose_models(models_list: List[Union[str, Path]]) -> None:
             logger.warning(
                 f"No matching atoms found for superposition in {model}. Skipping."
             )
-        else:
-            super_imposer = Superimposer()
-            super_imposer.set_atoms(ref_atoms, alt_atoms)
-            super_imposer.apply(alt_model.get_atoms())
+            continue
 
-            io = MMCIFIO()
-            io.set_structure(alt_structure)
-            io.save(str(model))  # overwrite the original file
+        sup = gemmi.superpose_positions(ref_atoms, alt_atoms)
+        alt_model.transform_pos_and_adp(sup.transform)
+        alt_structure.make_mmcif_document().write_file(str(model))
+
+    # parser = MMCIFParser(QUIET=True)
+    # structure = parser.get_structure(Path(models_list[0]).stem, Path(models_list[0]))
+    # ref_model = structure[0]
+
+    # for model in models_list[1:]:
+    #     alt_structure = parser.get_structure(Path(model).stem, Path(model))
+    #     alt_model = alt_structure[0]
+
+    #     ref_atoms = []
+    #     alt_atoms = []
+    #     for ref_chain, alt_chain in zip(ref_model, alt_model, strict=False):
+    #         for ref_res, alt_res in zip(ref_chain, alt_chain, strict=False):
+    #             if ref_res.resname != alt_res.resname or ref_res.id != alt_res.id:
+    #                 pass
+
+    #             # Handle nucleotides and proteins differently
+    #             if ref_res.resname in ["DA", "DT", "DG", "DC"]:
+    #                 ref_atoms.append(ref_res["C1'"])
+    #                 alt_atoms.append(alt_res["C1'"])
+    #             elif ref_res.resname in ["A", "U", "G", "C", "T"]:
+    #                 ref_atoms.append(ref_res["C1'"])
+    #                 alt_atoms.append(alt_res["C1'"])
+    #             elif "CA" in ref_res:
+    #                 ref_atoms.append(ref_res["CA"])
+    #                 alt_atoms.append(alt_res["CA"])
+    #             else:  # Ignore anything else
+    #                 pass
+
+    #     if len(ref_atoms) == 0 or len(alt_atoms) == 0:
+    #         logger.warning(
+    #             f"No matching atoms found for superposition in {model}. Skipping."
+    #         )
+    #     else:
+    #         super_imposer = Superimposer()
+    #         super_imposer.set_atoms(ref_atoms, alt_atoms)
+    #         super_imposer.apply(alt_model.get_atoms())
+
+    #         io = MMCIFIO()
+    #         io.set_structure(alt_structure)
+    #         io.save(str(model))  # overwrite the original file
