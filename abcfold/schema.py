@@ -366,6 +366,7 @@ def add_msa_to_config(
             if isinstance(seq, ProteinSeq)
         }
         # TODO: Enable multithreading here
+        # TODO: no need to fetch all as only the top 4/chain are used
         for _, r in tqdm(
             templates_df.iterrows(),
             total=templates_df.shape[0],

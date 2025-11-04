@@ -67,14 +67,14 @@ def postprocess(
         )
 
     if boltz_results_dir is not None:
-        logger.info("Post-processing Boltz results...")
+        logger.info("Collecting Boltz results...")
 
         boltz_out_dirs = list(boltz_results_dir.glob("boltz_results_*"))
         bo = PatchedBoltzOutput(boltz_out_dirs)
         found_models.append(bo)
 
     if chai_results_dir is not None:
-        logger.info("Post-processing Chai results...")
+        logger.info("Collecting Chai results...")
 
         chai_out_dirs = list(chai_results_dir.glob("chai_*_seed-*"))
         co = PatchedChaiOutput(chai_out_dirs)
@@ -95,7 +95,6 @@ def postprocess(
     logger.info("Generating plots...")
     plot_dict = plots(found_models, out_path / PLOTS_DIR)
 
-    logger.info("Comparing output models...")
     programs_run = []
     cif_models = [
         cif_file
@@ -169,7 +168,7 @@ def postprocess(
 
     (out_path / "output_models").mkdir(exist_ok=True)
     output_models = []
-    logger.info("Preparing output model files...")
+    logger.info("Copying output model files...")
     for model in combined_models:
         cif_file = out_path.joinpath(model["model_path"])
         # if model["model_source"] == "AlphaFold3":
@@ -184,7 +183,7 @@ def postprocess(
             shutil.copyfile(cif_file, output_model_path)
         output_models.append(output_model_path)
 
-    logger.info("Superimposing output models...")
+    logger.info("Superpositioning output models...")
     if len(output_models) > 1:
         superpose_models(output_models, superpose_chains)
 

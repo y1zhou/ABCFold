@@ -79,6 +79,7 @@ def search_msa(
     new_conf_path = out_path / f"{conf_path.stem}.yaml"
     write_config(conf, new_conf_path)
     print(f"Updated config written to: {new_conf_path}")
+    return new_conf_path
 
 
 @app.command(name="af3")
@@ -141,6 +142,7 @@ def prepare_chai(
     if chai_conf.restraints is not None:
         print(f"Chai restraints file written to: {chai_conf.restraints}")
     print(f"Chai config YAML (with chain mappings) written to: {config_yaml_file}")
+    return config_yaml_file
 
 
 @app.command(name="boltz")
@@ -181,6 +183,7 @@ def prepare_boltz(
     boltz_yaml_file = out_path / f"{run_id}.yaml"
     write_config(boltz_conf, boltz_yaml_file)
     print(f"Boltz config written to: {boltz_yaml_file}")
+    return boltz_yaml_file
 
 
 if __name__ == "__main__":
