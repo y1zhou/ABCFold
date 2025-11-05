@@ -12,7 +12,7 @@ from jinja2 import Environment, FileSystemLoader
 from abcfold.output.alphafold3 import AlphafoldOutput
 from abcfold.output.boltz import BoltzOutput
 from abcfold.output.chai import ChaiOutput
-from abcfold.output.file_handlers import ConfidenceJsonFile, NpzFile
+from abcfold.output.file_handlers import CifFile, ConfidenceJsonFile, NpzFile
 from abcfold.plots.pae_plot import create_pae_plots
 from abcfold.plots.plddt_plot import plot_plddt
 
@@ -50,7 +50,7 @@ def get_regions_helper(indices):
     return regions
 
 
-def get_model_sequence_data(cif_objs) -> dict:
+def get_model_sequence_data(cif_objs: Iterable[CifFile]) -> dict:
     """Get the sequence for each chain and ligand in the model, used internally for plotting.
 
     Args:
@@ -62,27 +62,7 @@ def get_model_sequence_data(cif_objs) -> dict:
     """
     sequence_data: dict = {}
     for cif_obj in cif_objs:
-        sequence_data_ = {}
-        for chain in cif_obj.get_chains():
-            if cif_obj.check_ligand(chain):
-                if chain.id not in sequence_data_:
-                    sequence_data_[chain.id] = ""
-                sequence_data_[chain.id] += "".join(
-                    [atom.id[0] for residue in chain for atom in residue]
-                )
-            elif cif_obj.check_other(chain, ["dna"]):
-                sequence_data_[chain.id] = "".join(
-                    [residue.get_resname()[-1] for residue in chain]
-                )
-            elif cif_obj.check_other(chain, ["rna"]):
-                sequence_data_[chain.id] = "".join(
-                    [residue.get_resname() for residue in chain]
-                )
-            else:
-
-                sequence_data_[chain.id] = "".join(
-                    [seq1(residue.get_resname()) for residue in chain]
-                )
+        sequence_data_ = cif_obj.get_model_sequence_data()
         sequence_data = {
             chain_id: sorted(
                 [sequence_data_[chain_id], sequence_data.get(chain_id, "")],

@@ -325,18 +325,11 @@ def clashes_csv(cif_file: CifFile, output_name: str | Path):
     output_name = Path(output_name)
 
     _, clashes = cif_file.check_clashes()
-    df = pd.DataFrame(columns=COLUMNS)
-
-    for clash in clashes:
-        atom1, atom2 = clash
-        chain_id1, chain_id2 = atom1.get_full_id()[2], atom2.get_full_id()[2]
-        res1, res2 = atom1.get_full_id()[3][1], atom2.get_full_id()[3][1]
-        df.loc[len(df)] = [
-            f"Chain-{chain_id1}",
-            res1,
-            f"Chain-{chain_id2}",
-            res2,
-            False,
-        ]
-
+    df = pd.DataFrame(
+        [
+            (f"Chain-{clash[0]}", clash[1], f"Chain-{clash[2]}", clash[3], False)
+            for clash in clashes
+        ],
+        columns=COLUMNS,
+    )
     df.to_csv(output_name, index=False)
