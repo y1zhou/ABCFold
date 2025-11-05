@@ -104,9 +104,9 @@ def test_af3_pae_reorder(test_data):
         cif.to_file(Path(temp_dir).joinpath("test.cif"))
         cif_file = Path(temp_dir).joinpath("test.cif")
         structure = CifFile(cif_file, input_params=input_params)
-        assert [chain.id for chain in structure.get_chains()] == ["B", "A", "D", "C"]
+        assert [chain.name for chain in structure.get_chains()] == ["B", "A", "D", "C"]
         structure.update()
-        assert [chain.id for chain in structure.get_chains()] == ["B", "A", "D", "C"]
+        assert [chain.name for chain in structure.get_chains()] == ["B", "A", "D", "C"]
         pae_obj = Af3Pae.from_alphafold3(pae.data, structure)
 
         assert (

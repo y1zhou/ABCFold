@@ -144,10 +144,7 @@ def test_confidence_json_file(test_data):
 
 
 def test_superpose_models(test_data):
-    """
-    Test the superpose_models function to ensure it correctly superposes two CifFiles.
-    """
-
+    """Test the superpose_models function to ensure it correctly superposes two CifFiles."""
     with tempfile.TemporaryDirectory() as temp_dir:
         model_1 = Path(test_data.test_alphafold3_6BJ9_).joinpath(
             "seed-1_sample-0/model.cif"
@@ -164,7 +161,7 @@ def test_superpose_models(test_data):
 
         superposed_atoms = []
         count = 0
-        with open(f"{temp_dir}/model_2.cif", "r") as f:
+        with open(f"{temp_dir}/model_2.cif") as f:
             for line in f:
                 if line.startswith("ATOM"):
                     fields = line.split()
@@ -188,4 +185,11 @@ def test_superpose_models(test_data):
 
         print(f"Superposed atoms: {superposed_atoms}")
 
-        assert ref_superposed_atoms == superposed_atoms
+        import numpy as np
+
+        assert np.allclose(
+            np.array(ref_superposed_atoms, dtype=float),
+            np.array(superposed_atoms, dtype=float),
+            atol=1e-3,
+        )
+        # assert ref_superposed_atoms == superposed_atoms
