@@ -10,14 +10,8 @@ from pathlib import Path
 import gemmi
 import numpy as np
 import orjson
-from Bio.PDB import MMCIFIO, Chain, MMCIFParser, Model
 from Bio.PDB.Atom import Atom
-from Bio.PDB.kdtrees import KDTree
-from Bio.PDB.Polypeptide import is_aa
 from Bio.PDB.Residue import Residue
-from Bio.SeqUtils import seq1
-
-from abcfold.output.atoms import VANDERWALLS
 
 warnings.filterwarnings("ignore")
 
@@ -179,36 +173,34 @@ class CifFile(FileBase):
         self.__name = name
 
     @property
-    def plddts(self):
+    def plddts(self) -> list[float]:
         """The pLDDT scores for each atom in the model."""
         if self.__plddts is not None:
             return self.__plddts
 
         self.__plddts = [
-            plddts for plddts in self.get_plddt_per_atom().values() for plddts in plddts
+            v for plddts in self.get_plddt_per_atom().values() for v in plddts
         ]
         return self.__plddts
 
     @property
-    def residue_plddts(self):
+    def residue_plddts(self) -> list[float]:
         """The pLDDT scores for each residue in the model."""
         if self.__residue_plddts is not None:
             return self.__residue_plddts
 
         self.__residue_plddts = [
-            plddts
-            for plddts in self.get_plddt_per_residue().values()
-            for plddts in plddts
+            v for plddts in self.get_plddt_per_residue().values() for v in plddts
         ]
         return self.__residue_plddts
 
     @property
-    def average_plddt(self):
+    def average_plddt(self) -> float:
         """The average pLDDT score for the model."""
         return float(np.mean(self.plddts))
 
     @property
-    def ligand_plddts(self):
+    def ligand_plddts(self) -> dict[str, list[float]]:
         """The pLDDT scores for each ligand in the model."""
         if self.__ligand_plddts is not None:
             return self.__ligand_plddts
@@ -217,7 +209,7 @@ class CifFile(FileBase):
         return self.__ligand_plddts
 
     @property
-    def h_score(self):
+    def h_score(self) -> int:
         """The H score for the model."""
         if self.__h_score is not None:
             return self.__h_score
@@ -241,10 +233,7 @@ class CifFile(FileBase):
         return self.model1
 
     def chain_lengths(
-        self,
-        mode=ModelCount.RESIDUES,
-        ligand_atoms=False,
-        ptm_atoms=False,
+        self, mode=ModelCount.RESIDUES, ligand_atoms=False, ptm_atoms=False
     ) -> dict[str, int]:
         """Get the length of each chain in the model.
 
@@ -252,7 +241,9 @@ class CifFile(FileBase):
             mode (ModelCount): Enum class specifying the mode to use.
                 Note: For ligands the length will always be the number of atoms
             ligand_atoms (bool): Whether to count the number of atoms for ligands.
+                If False, the length will be 1 for each ligand chain.
             ptm_atoms (bool): Whether to count the number of atoms for PTMs.
+                If False, each PTM will be counted as 1 residue.
 
         Returns:
             dict: Dictionary containing the chain id and the length of the chain
@@ -263,51 +254,44 @@ class CifFile(FileBase):
         """
         model = self.model1
         if mode == ModelCount.ALL or mode == ModelCount.ALL.value:
-            # return {
-            #     chain.id: len([atom for resiude in chain for atom in resiude])
-            #     for chain in model
-            # }
             chain_lengths: dict = {}
             for chain in model:
                 chain: gemmi.Chain
                 if chain.name in chain_lengths:
-                    chain_lengths[chain.name] += sum(len(residue) for residue in chain)
+                    chain_lengths[chain.name] += chain.count_atom_sites()
                 else:
-                    chain_lengths[chain.name] = sum(len(residue) for residue in chain)
+                    chain_lengths[chain.name] = chain.count_atom_sites()
 
             return chain_lengths
 
         elif mode == ModelCount.RESIDUES or mode == ModelCount.RESIDUES.value:
-            # TODO
             residue_counts: dict = {}
             for chain in model:
                 chain: gemmi.Chain
-                if self.check_other(chain, ["protein", "rna", "dna"]) and ptm_atoms:
-                    counter = 0
-                    for residue in chain:
-                        if is_aa(residue.resname, standard=True):
-                            counter += 1
-                            continue
-                        else:
-                            counter += len([atom for atom in residue])
+                chain_polymer = chain.get_polymer()
 
-                    residue_counts[chain.id] = counter
+                # Protein/DNA/RNA chain, count PTMs
+                if len(chain_polymer) > 0 and ptm_atoms:
+                    residue_counts[chain.name] = sum(
+                        1
+                        if gemmi.find_tabulated_residue(residue.name).is_standard()
+                        else len(residue)
+                        for residue in chain
+                    )
 
                 elif self.check_ligand(chain):
                     if ligand_atoms:
-                        if chain.id in residue_counts:
-                            residue_counts[chain.id] += len(
-                                [atom for resiude in chain for atom in resiude]
-                            )
+                        if chain.name in residue_counts:
+                            residue_counts[chain.name] += chain.count_atom_sites()
                         else:
-                            residue_counts[chain.id] = len(
-                                [atom for resiude in chain for atom in resiude]
-                            )
+                            residue_counts[chain.name] = chain.count_atom_sites()
 
                     else:
-                        residue_counts[chain.id] = 1
+                        residue_counts[chain.name] = 1
+
+                # Protein/DNA/RNA chain, ignore PTMs
                 else:
-                    residue_counts[chain.id] = len([residue for residue in chain])
+                    residue_counts[chain.name] = len(chain_polymer)
 
             return residue_counts
 
@@ -324,22 +308,25 @@ class CifFile(FileBase):
             chain
 
         """
-        # TODO
         from abcfold.output.utils import flatten
 
-        chains = self.get_chains()
         residue_ids = {}
-        for chain in chains:
+        for chain in self.model1:
+            # In BioPython, residue.id is a tuple of:
+            # (hetero flag, sequence identifier, insertion code)
+            # In Gemmi, this corresponds to:
+            # (res.het_flag, res.seqid.num, res.seqid.icode)
             if self.check_ligand(chain):
-                residue_ids[chain.id] = [
-                    [residue.id[1]] for residue in chain for _ in residue
+                residue_ids[chain.name] = [
+                    [residue.seqid.num] for residue in chain for _ in residue
                 ]
                 continue
-            residue_ids[chain.id] = [
+            residue_ids[chain.name] = [
                 (
-                    [residue.id[1]]
-                    if residue.id[0] == " " or residue.id[0] == "H"
-                    else [residue.id[1] for _ in residue]
+                    [residue.seqid.num]
+                    if residue.het_flag in {"A", "H"}
+                    # if residue.id[0] == " " or residue.id[0] == "H"
+                    else [residue.seqid.num for _ in residue]
                 )
                 for residue in chain
             ]
@@ -348,14 +335,13 @@ class CifFile(FileBase):
 
         return residue_ids
 
-    def calculate_h_score(self):
+    def calculate_h_score(self) -> int:
         """Calculate the H score for the model.
 
         Returns:
             float: The H score for the model
 
         """
-        # TODO
         score = 0
         for i in reversed(range(1, 101)):
             if (100.0 / len(self.plddts)) * np.sum(np.array(self.plddts) >= i) >= i:
@@ -363,46 +349,41 @@ class CifFile(FileBase):
                 break
         return score
 
-    def get_model_sequence_data(self) -> dict:
+    def get_model_sequence_data(self) -> dict[str, str]:
         """Get the sequence for each chain and ligand in the model, used internally for plotting.
 
         Returns:
             dict : Chain ID and sequence data
 
         """
-        # TODO
         sequence_data = {}
-        for chain in self.model[0]:
+        for chain in self.model1:
             if self.check_ligand(chain):
-                sequence_data[chain.id] = "".join(
-                    [atom.id[0] for residue in chain for atom in residue]
+                # Use the first letter of the atom name as the "sequence" for ligands
+                sequence_data[chain.name] = "".join(
+                    [atom.name[0] for residue in chain for atom in residue]
                 )
             else:
-                sequence_data[chain.id] = "".join(
-                    [seq1(residue.get_resname()) for residue in chain]
+                sequence_data[chain.name] = (
+                    chain.get_polymer().make_one_letter_sequence()
                 )
         return sequence_data
 
-    def get_plddt_per_atom(self) -> dict:
+    def get_plddt_per_atom(self) -> dict[str, list[float]]:
         """Get the pLDDT scores for each atom in the model.
 
         Returns:
             dict: Dictionary containing the chain id and the pLDDT scores for each atom
 
         """
-        # TODO
-        plddt: dict[str, list] = {}
-        for chain in self.model[0]:
-            for residue in chain:
-                for atom in residue:
-                    if chain.id in plddt:
-                        plddt[chain.id].append(atom.bfactor)
-                    else:
-                        plddt[chain.id] = [atom.bfactor]
+        return {
+            chain.name: [atom.b_iso for residue in chain for atom in residue]
+            for chain in self.model1
+        }
 
-        return plddt
-
-    def get_plddt_per_residue(self, method=ResidueCountType.AVERAGE.value) -> dict:
+    def get_plddt_per_residue(
+        self, method=ResidueCountType.AVERAGE.value
+    ) -> dict[str, list[float]]:
         """Get the pLDDT scores for each residue in the model.
 
         Args:
@@ -413,8 +394,7 @@ class CifFile(FileBase):
             residue
 
         """
-        # TODO
-        plddts: dict[str, list] = {}
+        plddts: dict[str, list[float]] = {}
 
         if method not in ResidueCountType.values():
             logger.error(
@@ -422,43 +402,29 @@ class CifFile(FileBase):
             )
             raise ValueError()
 
-        chains = self.get_chains()
-        for chain in chains:
+        for chain in self.model1:
             if self.check_ligand(chain):
-                if chain.id in plddts:
-                    plddts[chain.id].extend(
-                        [atom.bfactor for residue in chain for atom in residue]
-                    )
-                else:
-                    plddts[chain.id] = [
-                        atom.bfactor for residue in chain for atom in residue
-                    ]
+                # For ligands, return pLDDT per atom
+                if chain.name not in plddts:
+                    plddts[chain.name] = []
+                plddts[chain.name].extend(
+                    atom.b_iso for residue in chain for atom in residue
+                )
 
             else:
                 for residue in chain:
                     if method == ResidueCountType.AVERAGE.value:
-                        scores = 0
-                        for atom in residue:
-                            scores += atom.bfactor
-                        score = scores / len(residue)
+                        score = sum(atom.b_iso for atom in residue) / len(residue)
 
                     elif method == ResidueCountType.CARBONALPHA.value:
-                        for atom in residue:
-                            if atom.id == "CA":
-                                score = atom.bfactor
-                                break
+                        score = residue.get_ca().b_iso
 
                     elif method == ResidueCountType.PHOSPHATE.value:
-                        for atom in residue:
-                            if atom.id == "P":
-                                score = atom.bfactor
-                                break
+                        score = residue.get_p().b_iso
 
-                    if chain.id in plddts:
-                        plddts[chain.id].append(score)
-
-                    else:
-                        plddts[chain.id] = [score]
+                    if chain.name not in plddts:
+                        plddts[chain.name] = []
+                    plddts[chain.name].append(score)
 
         plddt_lengths = {k: len(v) for (k, v) in plddts.items()}
         chain_lengths = self.chain_lengths(mode="residues", ligand_atoms=True)
@@ -468,47 +434,43 @@ class CifFile(FileBase):
             )
         return plddts
 
-    def get_plddt_per_ligand(self) -> dict:
+    def get_plddt_per_ligand(self) -> dict[str, list[float]]:
         """Get the pLDDT scores for each ligand in the model.
 
         Returns:
             dict: Dictionary containing the chain id and the pLDDT scores for each atom
 
         """
-        # TODO
-        plddt: dict[str, list] = {}
-        for chain in self.model[0]:
-            if self.check_ligand(chain):
-                for residue in chain:
-                    for atom in residue:
-                        if chain.id in plddt:
-                            plddt[chain.id].append(atom.bfactor)
-                        else:
-                            plddt[chain.id] = [atom.bfactor]
+        plddt: dict[str, list[float]] = {}
+        for chain in self.model1:
+            if not self.check_ligand(chain):
+                continue
+
+            ligand_plddt = [atom.b_iso for residue in chain for atom in residue]
+            if chain.name in plddt:
+                plddt[chain.name].extend(ligand_plddt)
+            else:
+                plddt[chain.name] = ligand_plddt
         return plddt
 
-    def check_ligand(self, chain: Chain) -> bool:
+    def check_ligand(self, chain: gemmi.Chain) -> bool:
         """Check if the chain is a ligand.
 
-        Args:
-            chain (Chain): BioPython chain object
-
-        Returns:
-            bool: True if the chain is a ligand, False otherwise
-
+        This would have false positives for crystal structures, but for predicted
+        structures this should be fine.
         """
-        # TODO
-        return self.check_other(chain, ["ligand"])
+        return len(chain.get_ligands()) > 0
 
-    def check_other(self, chain: gemmi.Chain, check_list) -> bool:
+    def check_other(self, chain: gemmi.Chain, check_seq_types: list[str]) -> bool:
         """Check if the chain is of a certain type."""
+        # TODO: infer sequence types from cif directly
         sequences = self.input_params.get("sequences")
         if sequences is None:
             # logger.warning("Unable to gain sequence information from input file")
             return False
         for sequence in sequences:
             for sequence_type, sequence_data in sequence.items():
-                if sequence_type in check_list:
+                if sequence_type in check_seq_types:
                     if "id" not in sequence_data:
                         continue
                     if hasattr(chain, "name"):
@@ -538,7 +500,7 @@ class CifFile(FileBase):
         """
         # TODO
         chain_ids = chain_ids.copy()
-        structure = self.model[0]
+        structure = self.model1
         old_new_chain_id = {}
 
         if link_ids is None:
@@ -550,7 +512,7 @@ class CifFile(FileBase):
 
         old_chain_label_counter, new_chain_label_counter = 0, 0
 
-        chain_names = [chain.id for chain in structure]
+        chain_names = [chain.name for chain in structure]
         while old_chain_label_counter < len(structure):
             chain = chain_ids[new_chain_label_counter]
             old_new_chain_id[chain_names[old_chain_label_counter]] = chain
@@ -563,14 +525,14 @@ class CifFile(FileBase):
                 for _ in link_ids[chain]:
                     old_new_chain_id[chain_names[old_chain_label_counter]] = chain
                     for residue in structure[chain_names[old_chain_label_counter]]:
-                        residue.id = (residue.id[0], ligand_no_added, residue.id[2])
+                        residue.seqid.num = ligand_no_added
                         ligand_no_added += 1
                     old_chain_label_counter += 1
 
             new_chain_label_counter += 1
 
         for chain_to_rename in structure:
-            chain_to_rename.id = old_new_chain_id[chain_to_rename.id]
+            chain_to_rename.name = old_new_chain_id[chain_to_rename.name]
 
         assert old_chain_label_counter == len(self.get_chains()), (
             "Number of chain ids must match the number of chains"
@@ -579,106 +541,100 @@ class CifFile(FileBase):
 
     def update(self):
         """Update the cif file after making changes to the model."""
-        # TODO
         self.to_file(self.pathway)
         self = CifFile(self.pathway, self.input_params)
 
     def reorder_chains(self, new_chain_ids: list[str]):
         """Rearrange the order of chains in a structure model."""
-        # TODO
-        assert sorted([chain.id for chain in self.get_chains()]) == sorted(
-            new_chain_ids
-        ), (
+        assert sorted([chain.name for chain in self.model1]) == sorted(new_chain_ids), (
             "The chain ids need to be identical to what is in the model already \
 for reordering"
         )
-
-        new_model = Model.Model(0)
-
-        [new_model.add(self.model[0][ch]) for ch in new_chain_ids]
-        self.model.detach_child(0)
-        self.model.add(new_model)
+        new_model = gemmi.Model("0")
+        for ch in new_chain_ids:
+            new_model.add_chain(self.model1[ch])
+        new_st = gemmi.Structure()
+        new_st.add_model(new_model)
+        new_st.meta = self.model.meta
+        new_st.raw_remarks = self.model.raw_remarks
+        new_st.setup_entities()
+        self.model = new_st
         self.update()
 
     def check_clashes(
-        self,
-        threshold: int | float = 3.4,
-        bucket: int = 10,
-        clash_cutoff: float = 0.63,
+        self, threshold: int | float = 3.4, clash_cutoff: float = 0.63
     ) -> tuple[list[tuple[Atom, Atom]], list[tuple[Residue, Residue]]]:
         """Check for clashes between atoms in different chains.
 
         Args:
             threshold: The distance threshold for a clash.
-            bucket: The number of atoms in each bucket for the KDTree.
-            clash_cutoff: The cutoff for a clash.
+            clash_cutoff: The cutoff for a clash, as a fraction of the sum of the
+                van der Waals radii of the two atoms.
 
         Returns:
             A list of clashes.
 
         """
-        # TODO
-        atoms = self.get_atoms()
-        coords = np.array(
-            [atom.get_coord() for atom in atoms],
-            dtype="d",
-        )
-        assert bucket > 1
-        assert coords.shape[1] == 3
-        assert clash_cutoff > 0.0 and clash_cutoff <= 1.0
+        ns = gemmi.NeighborSearch(
+            self.model1, self.model.cell, max_radius=threshold
+        ).populate()  # add include_h=False if needed
+        cs = gemmi.ContactSearch(threshold)
+        cs.ignore = gemmi.ContactSearch.Ignore.SameChain
 
-        tree = KDTree(coords, bucket)
-        neighbors = tree.neighbor_search(threshold)
+        # r = a * covalent_radius + b/2, a is multiplier and b is tolerance
+        cs.setup_atomic_radii(1.0, 1.5)
+        neighbors = cs.find_contacts(ns)
+
         clashes_atoms, clashes_residues = [], []
-
-        for neighbor in neighbors:
-            i1, i2 = neighbor.index1, neighbor.index2
-            atom1, atom2 = atoms[i1], atoms[i2]
-            # get the element of the atom
-            element1 = atom1.element
-            element2 = atom2.element
-            # find chain_id and residue_id
-            chain_id1 = atom1.get_full_id()[2]
-            chain_id2 = atom2.get_full_id()[2]
-
-            if chain_id1 == chain_id2:
+        for n in neighbors:
+            if n.partner1.atom.name == "C" and n.partner2.atom.name == "N":
                 continue
-
-            distance = np.linalg.norm(atom1.get_coord() - atom2.get_coord())
-            if (atom1.name == "C" and atom1.name == "N") or (
-                atom2.name == "N" and atom1.name == "C"
-            ):
+            if n.partner1.atom.name == "N" and n.partner2.atom.name == "C":
                 continue
-            elif (atom1.name == "SG" and atom2.name == "SG") and distance > 1.88:
+            if (
+                n.partner1.atom.name == "SG" and n.partner2.atom.name == "SG"
+            ) and n.dist > 1.88:
                 continue
 
             clash_radius = (
-                VANDERWALLS.get(element1, 1.7) + VANDERWALLS.get(element2, 1.7)
-            ) * 0.63
-            if distance < clash_radius:
-                residue1 = atom1.get_parent()
-                residue2 = atom2.get_parent()
-
-                clashes_atoms.append((atom1, atom2))
-
-                if (residue1, residue2) not in clashes_residues:
-                    clashes_residues.append((residue1, residue2))
+                cs.get_radius(n.partner1.atom.element)
+                + cs.get_radius(n.partner2.atom.element)
+            ) * clash_cutoff
+            if n.dist < clash_radius:
+                clashes_atoms.append((n.partner1.atom, n.partner2.atom))
+                clash_res_pair = (
+                    (
+                        n.partner1.chain.name,
+                        n.partner1.residue.seqid.num,
+                        n.partner2.chain.name,
+                        n.partner2.residue.seqid.num,
+                    )
+                    if n.partner1.chain.name < n.partner2.chain.name
+                    else (
+                        n.partner2.chain.name,
+                        n.partner2.residue.seqid.num,
+                        n.partner1.chain.name,
+                        n.partner1.residue.seqid.num,
+                    )
+                )
+                if clash_res_pair not in clashes_residues:
+                    clashes_residues.append(clash_res_pair)
 
         self.clashes = len(clashes_atoms)
         self.clashes_residues = len(clashes_residues)
         return (clashes_atoms, clashes_residues)
 
-    def get_atoms(self, chain_id=None) -> list:
+    def get_atoms(self, chain_id=None) -> list[gemmi.Atom]:
         """Get the atoms of the structure."""
-        # TODO
         if chain_id is not None:
             return [
                 atom
-                for chain in self.model[0]
-                for atom in chain.get_atoms()
-                if chain.id == chain_id
+                for chain in self.model1
+                for residue in chain
+                for atom in residue
+                if chain.name == chain_id
             ]
-        return [atom for chain in self.model[0] for atom in chain.get_atoms()]
+        return [atom for chain in self.model1 for residue in chain for atom in residue]
 
     def to_file(self, output_file: str | Path) -> None:
         """Save the cif file.
@@ -690,18 +646,20 @@ for reordering"
             None
 
         """
-        # TODO
-        io = MMCIFIO()
-        io.set_structure(self.model)
+        out_path = Path(output_file)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        self.model.make_mmcif_document().write_file(str(output_file))
+        # io = MMCIFIO()
+        # io.set_structure(self.model)
 
-        # save creates the dictionary
-        io.save(str(output_file))
-        self.__atom_site_label_update(io.dic)
-        self.__ligand_to_hetatm(io.dic)
-        with open(output_file, "w") as f:
-            io._save_dict(f)
+        # # save creates the dictionary
+        # io.save(str(output_file))
+        # self.__atom_site_label_update(io.dic)
+        # self.__ligand_to_hetatm(io.dic)
+        # with open(output_file, "w") as f:
+        #     io._save_dict(f)
 
-        self.__single_to_double_quotes(output_file)
+        # self.__single_to_double_quotes(output_file)
 
     def __single_to_double_quotes(self, file_name: str | Path) -> None:
         new_lines = []
