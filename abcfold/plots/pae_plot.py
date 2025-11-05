@@ -5,7 +5,6 @@ import shutil
 import subprocess
 from multiprocessing import Process
 from pathlib import Path
-from typing import Dict, List, Union
 
 import pandas as pd
 
@@ -52,10 +51,9 @@ COLUMNS = [
 
 def create_pae_plots(
     outputs: list,
-    output_dir: Union[str, Path],
-) -> Dict[str, str]:
-    """
-    Create PAE html plots for the outputs
+    output_dir: str | Path,
+) -> dict[str, str]:
+    """Create PAE html plots for the outputs.
 
     Args:
         outputs: List of outputs to create plots for
@@ -69,9 +67,9 @@ def create_pae_plots(
 
 
     """
-    pathway_plot: Dict[str, str] = {}
-    run_scripts: List[list] = []
-    template_files: List[Path] = []
+    pathway_plot: dict[str, str] = {}
+    run_scripts: list[list] = []
+    template_files: list[Path] = []
     output_dir = Path(output_dir)
 
     # start by copying the pae viewer files to the output directory
@@ -185,9 +183,8 @@ def create_pae_plots(
 def prepare_scripts(
     cif_files, pae_files, plots_dir, pathway_plot, template_file, is_af3=False
 ):
-
     scripts = []
-    for cif_file, pae_file in zip(cif_files, pae_files):
+    for cif_file, pae_file in zip(cif_files, pae_files, strict=True):
         name_stem = f"{pae_file.pathway.stem}\
 {'_' + pae_file.pathway.parent.stem if is_af3 else ''}_{'af3_' if is_af3 else ''}"
 
@@ -210,7 +207,7 @@ def prepare_scripts(
 
 
 def run_script(cmd):
-    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:  # noqa: S603
         stdout, stderr = proc.communicate()
         proc.wait()
 
@@ -219,15 +216,14 @@ def run_script(cmd):
 
 
 def get_pae_run_script(
-    cif_path: Union[str, Path],
-    labels: List[str],
-    pae_path: Union[str, Path],
-    output_file: Union[str, Path],
-    template_file: Union[str, Path],
-    clashes_csv_file: Union[str, Path],
+    cif_path: str | Path,
+    labels: list[str],
+    pae_path: str | Path,
+    output_file: str | Path,
+    template_file: str | Path,
+    clashes_csv_file: str | Path,
 ):
-    """
-    Get the command to run the PAE viewer script
+    """Get the command to run the PAE viewer script.
 
     Args:
         cif_path: Path to the CIF file
@@ -235,11 +231,11 @@ def get_pae_run_script(
         pae_path: Path to the PAE file
         output_file: Path to the output file
         template_file: Path to the template file
-        clashes_csv: Path to the clashes CSV file
+        clashes_csv_file: Path to the clashes CSV file
     Returns:
         Command to run the PAE viewer script
-    """
 
+    """
     cif_path = Path(cif_path)
     pae_path = Path(pae_path)
     output_file = Path(output_file)
@@ -269,12 +265,8 @@ def get_pae_run_script(
 
 
 def get_template_run_script(
-    title: str,
-    standalonecss: str,
-    output_file: Union[str, Path],
-    src_path: Union[str, Path],
+    title: str, standalonecss: str, output_file: str | Path, src_path: str | Path
 ):
-    """ """
     output_file = Path(output_file)
     src_path = Path(src_path)
     cmd = []
@@ -293,7 +285,7 @@ def get_template_run_script(
     return cmd
 
 
-def make_dir(output_dir: Union[str, Path]):
+def make_dir(output_dir: str | Path):
     output_dir = Path(output_dir)
     if output_dir.exists():
         return output_dir
@@ -301,7 +293,7 @@ def make_dir(output_dir: Union[str, Path]):
     return output_dir
 
 
-def copy_pae_viewer_files(output_dir: Union[str, Path]):
+def copy_pae_viewer_files(output_dir: str | Path):
     output_dir = Path(output_dir)
     if not output_dir.exists():
         output_dir.mkdir(parents=True)
@@ -319,7 +311,7 @@ def copy_pae_viewer_files(output_dir: Union[str, Path]):
                 shutil.copy2(file_, new_file)
 
 
-def create_subdirs(output_dir: Union[str, Path], subdirs: List[str]):
+def create_subdirs(output_dir: str | Path, subdirs: list[str]):
     output_dir = Path(output_dir)
     subdirs = subdirs[:-1]
     new_subdirs = output_dir
@@ -329,7 +321,7 @@ def create_subdirs(output_dir: Union[str, Path], subdirs: List[str]):
             new_subdirs.mkdir()
 
 
-def clashes_csv(cif_file: CifFile, output_name: Union[str, Path]):
+def clashes_csv(cif_file: CifFile, output_name: str | Path):
     output_name = Path(output_name)
 
     _, clashes = cif_file.check_clashes()

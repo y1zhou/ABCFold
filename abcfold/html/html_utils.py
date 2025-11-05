@@ -1,9 +1,9 @@
 import http.server
 import textwrap
+from collections.abc import Iterable
 from itertools import groupby
 from operator import itemgetter
 from pathlib import Path
-from typing import Dict, Union
 
 import numpy as np
 from Bio.SeqUtils import seq1
@@ -19,16 +19,14 @@ from abcfold.plots.plddt_plot import plot_plddt
 PORT = 8000
 
 
-def get_plddt_regions(plddts: Union[np.ndarray, list]) -> dict:
-    """
-    Get the pLDDT regions for the model
-    """
+def get_plddt_regions(plddts: np.ndarray | list) -> dict:
+    """Get the pLDDT regions for the model."""
     if not isinstance(plddts, np.ndarray):
         plddts = np.array(plddts)
 
     regions = {}
     # replace none values with -1
-    plddts = np.where(plddts == None, -1, plddts) # noqa F401
+    plddts = np.where(plddts == None, -1, plddts)  # noqa F401
 
     v_low = np.where((0 <= plddts) & (plddts <= 50))[0]
     regions["v_low"] = get_regions_helper(v_low)
@@ -43,9 +41,7 @@ def get_plddt_regions(plddts: Union[np.ndarray, list]) -> dict:
 
 
 def get_regions_helper(indices):
-    """
-    Get the regions from the indices
-    """
+    """Get the regions from the indices."""
     regions = []
     for _, g in groupby(enumerate(indices), lambda x: x[0] - x[1]):
         group = map(itemgetter(1), g)
@@ -55,15 +51,14 @@ def get_regions_helper(indices):
 
 
 def get_model_sequence_data(cif_objs) -> dict:
-    """
-    Get the sequence for each chain and ligand in the model, used internally
-    for plotting
+    """Get the sequence for each chain and ligand in the model, used internally for plotting.
 
     Args:
         cif_objs : A list of CifFile objs
 
     Returns:
         dict : Chain ID and sequence data
+
     """
     sequence_data: dict = {}
     for cif_obj in cif_objs:
@@ -100,15 +95,16 @@ def get_model_sequence_data(cif_objs) -> dict:
 
 
 def get_model_data(model, plot_dict, method, plddt_scores, score_file, output_dir):
-    """
-    Get the model data for the output page
+    """Get the model data for the output page.
 
     Args:
         model (CifFile): Model object
         plot_dict (dict): Dictionary of plots
         method (str): Method used to generate the model
+        plddt_scores (list): List of pLDDT scores
         score_file (str): Path to the file containing model scores
         output_dir (Path): Path to the output directory
+
     """
     regions = get_plddt_regions(plddt_scores)
     ptm_score, iptm_score = parse_scores(score_file)
@@ -142,15 +138,15 @@ class NoCacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
 
 def plots(outputs: list, output_dir: Path):
-    """
-    Generate plots for the output of the different programs
+    """Generate plots for the output of the different programs.
 
     Args:
         outputs (list): List of output objects
+        output_dir (Path): Path to the output directory
 
     """
     pathway_plots = create_pae_plots(outputs, output_dir=output_dir)
-    plddt_plot_input: Dict[str, list] = get_all_cif_files(outputs)
+    plddt_plot_input: dict[str, list] = get_all_cif_files(outputs)
 
     plot_plddt(plddt_plot_input, output_name=output_dir.joinpath("plddt_plot.html"))
 
@@ -160,13 +156,13 @@ def plots(outputs: list, output_dir: Path):
 
 
 def render_template(in_file_path, out_file_path, **kwargs):
-    """
-    Templates the given file with the keyword arguments.
+    """Templates the given file with the keyword arguments.
 
     Args:
         in_file_path (Path): The path to the template.
         out_file_path (Path): The path to output the templated file.
         **kwargs (dict): Variables to use in templating.
+
     """
     env = Environment(
         loader=FileSystemLoader(in_file_path.parent), keep_trailing_newline=True
@@ -178,14 +174,13 @@ def render_template(in_file_path, out_file_path, **kwargs):
 
 
 def output_open_html_script(file_out: str, port: int = 8000):
-    """
-    Make a python script to open the output HTML file in the default web browser
+    """Make a python script to open the output HTML file in the default web browser.
 
     Args:
         file_out (str): Path to the output script
         port (int): Port to run the server on
-    """
 
+    """
     script = f"""
     import http.server
     import socketserver
@@ -222,8 +217,8 @@ def output_open_html_script(file_out: str, port: int = 8000):
         f.write(script)
 
 
-def get_all_cif_files(outputs) -> Dict[str, list]:
-    method_cif_objs: Dict[str, list] = {}
+def get_all_cif_files(outputs) -> dict[str, list]:
+    method_cif_objs: dict[str, list] = {}
 
     for output in outputs:
         if isinstance(output, AlphafoldOutput):
@@ -245,15 +240,15 @@ def get_all_cif_files(outputs) -> Dict[str, list]:
     return method_cif_objs
 
 
-def parse_scores(score_file: Union[ConfidenceJsonFile, NpzFile]) -> tuple:
-    """
-    Parse the scores from the score file.
+def parse_scores(score_file: ConfidenceJsonFile | NpzFile) -> tuple:
+    """Parse the scores from the score file.
 
     Args:
         score_file (Union[ConfidenceJsonFile, NpzFile]): The score file object.
 
     Returns:
         tuple: A tuple containing ptm_score and iptm_score as floats, or None if invalid
+
     """
     ptm_score = None
     iptm_score = None
