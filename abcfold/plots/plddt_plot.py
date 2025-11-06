@@ -1,7 +1,8 @@
-# import numpy as np
+"""Plotting functions for pLDDT distributions."""
+
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -14,17 +15,15 @@ logger = logging.getLogger("logger")
 
 
 def plot_plddt(
-    cif_models_dict: Dict[str, List[CifFile]],
-    output_name: Union[str, Path],
+    cif_models_dict: dict[str, list[CifFile]],
+    output_name: str | Path,
     line_width: float = 1.6,
     dash: str = "dot",
     show: bool = False,
     chain_line_occupancy: float = 0.9,
     include_plotlyjs: bool = True,
 ) -> None:
-    """
-    Plots the pLDDT distribution of the models in the dictionary of cif models. Outputs
-    and html file with the plot.
+    """Plot the pLDDT distribution of the models in the dictionary of cif models.
 
     Args:
         cif_models_dict: Dictionary of cif models to plot. The keys are the source of
@@ -37,14 +36,15 @@ def plot_plddt(
         dash: Dash style of the lines in the plot.
         show: If True, the plot will be displayed in the browser.
         chain_line_occupancy: Opacity of the vertical lines that separate the chains.
+        include_plotlyjs: If True, the plotly.js library will be included in the html file.
 
     Returns:
         None
 
     Outputs:
         An html file with the plot.
-    """
 
+    """
     fig = go.Figure()
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="LightGrey")
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="LightGrey")
@@ -64,10 +64,14 @@ def plot_plddt(
     indicies = get_gap_indicies(*cif_models)
     indicies_index = 0
 
+    added_model_order: list[tuple[str, int, int, str, go.Scatter]] = []
     for method, cif_models in cif_models_dict.items():
+        for cif_model in sorted(cif_models, key=lambda f: f.name):
+            cif_model_name_parts = cif_model.name.split("_")
+            model_index = int(cif_model_name_parts[-1])
+            model_seed = int(cif_model_name_parts[-2].split("-")[-1])
+            model_name = f"Seed {model_seed}-M{model_index}"
 
-        for cif_model in cif_models:
-            model_index = int(cif_model.name.split("_")[-1])
             color_list = method_colours.get(method, colours)
             color = color_list[model_index % len(color_list)]
 
@@ -92,12 +96,19 @@ def plot_plddt(
                 mode="lines",
                 legendgroup=method,
                 legendgrouptitle_text=Bold(method),
-                name=f"Model {model_index + 1}",
+                name=model_name,
                 line=dict(dash=dash, width=line_width, color=color),
                 visible=True,  # Ensure traces start as visible
                 showlegend=True,
             )
-            fig.add_trace(trace)
+            added_model_order.append(
+                (method, model_seed, model_index, model_name, trace)
+            )
+
+    # Order lines by method, seed, and model index
+    added_model_order = sorted(added_model_order, key=lambda x: (x[0], x[1], x[2]))
+    for *_, trace in added_model_order:
+        fig.add_trace(trace)
 
     fig.update_layout(
         legend=dict(
@@ -125,9 +136,9 @@ def plot_plddt(
         )
 
         colour_index += 1
+
     # Create buttons for each model
     buttons = []
-    num_models = len(cif_models_dict[next(iter(cif_models_dict))])
 
     # Add a button to show all traces
     buttons.append(
@@ -139,37 +150,25 @@ def plot_plddt(
     )
 
     # Add buttons for each individual model
-    for model_index in range(num_models):
-        button: Dict[str, Any] = dict(
+    added_model_names = []
+    for _, _, _, model_name, _ in added_model_order:
+        if model_name not in added_model_names:
+            added_model_names.append(model_name)
+
+    for model_name in added_model_names:
+        button: dict[str, Any] = dict(
             method="update",
             args=[
-                {
-                    "visible": [
-                        i % num_models == model_index for i in range(len(fig.data))
-                    ]
-                },
+                {"visible": [model_name == n for _, _, _, n, _ in added_model_order]},
                 {"showlegend": True},
             ],
-            label=f"Model {model_index + 1}",
+            label=model_name,
         )
-        for i in range(model_index, len(fig.data), num_models):
-            button["args"][0]["visible"][i] = True
         buttons.append(button)
 
     # Add the updatemenu to the layout
     fig.update_layout(
-        updatemenus=[
-            dict(
-                type="buttons",
-                showactive=True,
-                buttons=buttons,
-                direction="left",
-                x=0.5,
-                xanchor="center",
-                y=-0.1,
-                yanchor="top",
-            )
-        ],
+        updatemenus=[dict(showactive=True, buttons=buttons)],
         xaxis_title=Bold("Residue Number"),
         yaxis_title=Bold("pLDDT Score"),
         title=Bold("pLDDT Distribution"),
@@ -194,4 +193,5 @@ def plot_plddt(
 
 
 def Bold(string):
+    """Make a string bold in plotly annotations."""
     return f"<b>{string}</b>"
