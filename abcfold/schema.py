@@ -239,6 +239,31 @@ class ABCFoldConfig(BaseModel):
         # "--use_potentials",
     ]
 
+    @computed_field
+    @property
+    def hash(self) -> str:
+        """Get hash of the config.
+
+        Note that the hash computation only considers `sequences` and `restraints`.
+        """
+        import hashlib
+
+        import yaml
+
+        yaml.SafeDumper.add_multi_representer(
+            Enum, yaml.representer.SafeRepresenter.represent_str
+        )
+        self_dict = self.model_dump(
+            include=("sequences", "restraints"),
+            exclude_unset=True,
+            exclude_none=True,
+            exclude_computed_fields=True,
+        )
+        conf_bytes = yaml.safe_dump(
+            self_dict, sort_keys=False, default_flow_style=None
+        ).encode("utf-8")
+        return hashlib.sha256(conf_bytes).hexdigest()
+
 
 def load_abcfold_config(conf_file: str | Path) -> ABCFoldConfig:
     """Load ABCFold config from a file."""
