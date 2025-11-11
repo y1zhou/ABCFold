@@ -12,7 +12,6 @@ logger = logging.getLogger(__file__)
 def run_boltz(
     output_dir: str | Path,
     boltz_yaml_file: str | Path,
-    run_id: str,
     seed: int,
     num_trunk_recycles: int = 3,  # recycling_steps
     num_diffn_timesteps: int = 200,  # sampling_steps
@@ -33,6 +32,7 @@ def run_boltz(
     if not boltz_yaml_file.exists():
         raise FileNotFoundError(f"Boltz config file not found: {boltz_yaml_file}")
 
+    run_name = boltz_yaml_file.stem
     cmd = generate_boltz_command(
         boltz_yaml_file,
         workdir / f"boltz_seed_{seed}",
@@ -43,7 +43,7 @@ def run_boltz(
         additional_args=boltz_additional_cli_args,
     )
 
-    log_path = log_dir / f"boltz_{run_id}_seed-{seed}.log"
+    log_path = log_dir / f"boltz_seed-{seed}.log"
     with (
         sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT, encoding="utf-8") as p,  #  noqa: S603
         open(log_path, "w") as log_file,
@@ -71,8 +71,8 @@ def run_boltz(
             raise MemoryError("Boltz ran out of memory")
 
     # Move Boltz output files out of their subdirectories
-    final_out_dir = workdir / f"boltz_results_{run_id}_seed-{seed}"
-    (workdir / f"boltz_seed_{seed}" / f"boltz_results_{run_id}").rename(final_out_dir)
+    final_out_dir = workdir / f"boltz_results_seed-{seed}"
+    (workdir / f"boltz_seed_{seed}" / f"boltz_results_{run_name}").rename(final_out_dir)
     (workdir / f"boltz_seed_{seed}").rmdir()
 
     return final_out_dir

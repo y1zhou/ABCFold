@@ -109,16 +109,13 @@ def prepare_chai(
     out_dir: Annotated[
         Path,
         typer.Option(
-            ...,
-            "--out-dir",
-            "-o",
-            help="Output directory for prepared files.",
+            ..., "--out-dir", "-o", help="Output directory for prepared files."
         ),
     ],
     ccd_lib_dir: Annotated[
         Path | None,
         typer.Option(
-            help="Path to the Boltz CCD library directory. Can omit if no CCD ligands or modifications were used.",
+            help="Path to the Boltz CCD library directory. Can omit if no CCD ligands or modifications were used."
         ),
     ] = None,
 ):
@@ -127,15 +124,15 @@ def prepare_chai(
 
     conf_path = conf_file.expanduser().resolve()
     conf = load_abcfold_config(conf_path)
-    run_id = conf_path.stem
+    run_name = conf_path.stem
 
-    out_path = (out_dir / f"chai_{run_id}").expanduser().resolve()
+    out_path = (out_dir / "chai_models").expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
 
-    chai_conf = ChaiConfig(conf, out_path, run_id, ccd_lib_dir)
+    chai_conf = ChaiConfig(conf=conf, work_dir=out_path, ccd_lib_dir=ccd_lib_dir)
     chai_conf.generate_chai_inputs()
 
-    config_yaml_file = out_path / f"{run_id}.yaml"
+    config_yaml_file = out_path / f"{run_name}.yaml"
     chai_conf.dump_chai_config(config_yaml_file)
 
     print(f"Chai FASTA file written to: {chai_conf.fasta}")
@@ -153,10 +150,7 @@ def prepare_boltz(
     out_dir: Annotated[
         Path,
         typer.Option(
-            ...,
-            "--out-dir",
-            "-o",
-            help="Output directory for prepared files.",
+            ..., "--out-dir", "-o", help="Output directory for prepared files."
         ),
     ],
     max_num_templates_per_chain: Annotated[
@@ -171,16 +165,16 @@ def prepare_boltz(
 
     conf_path = conf_file.expanduser().resolve()
     conf = load_abcfold_config(conf_path)
-    run_id = conf_path.stem
+    run_name = conf_path.stem
 
-    out_path = (out_dir / f"boltz_{run_id}").expanduser().resolve()
+    out_path = (out_dir / "boltz_models").expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
 
     boltz_conf = abcfold_to_boltz(
         conf, out_path / "boltz_msa", max_num_templates_per_chain
     )
 
-    boltz_yaml_file = out_path / f"{run_id}.yaml"
+    boltz_yaml_file = out_path / f"{run_name}.yaml"
     write_config(boltz_conf, boltz_yaml_file)
     print(f"Boltz config written to: {boltz_yaml_file}")
     return boltz_yaml_file

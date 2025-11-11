@@ -69,14 +69,14 @@ def postprocess(
     if boltz_results_dir is not None:
         logger.info("Collecting Boltz results...")
 
-        boltz_out_dirs = list(boltz_results_dir.glob("boltz_results_*"))
+        boltz_out_dirs = list(boltz_results_dir.glob("boltz_results_seed-*"))
         bo = PatchedBoltzOutput(boltz_out_dirs)
         found_models.append(bo)
 
     if chai_results_dir is not None:
         logger.info("Collecting Chai results...")
 
-        chai_out_dirs = list(chai_results_dir.glob("chai_*_seed-*"))
+        chai_out_dirs = list(chai_results_dir.glob("chai_seed-*"))
         co = PatchedChaiOutput(chai_out_dirs)
         found_models.append(co)
 
@@ -298,11 +298,6 @@ class PatchedBoltzOutput(BoltzOutput):
         """
         self.output_dirs = [Path(x) for x in boltz_output_dirs]
 
-        # The directory pattern is boltz_results_{run_id}_seed-{seed}
-        self.name = (
-            self.output_dirs[0].name.split("boltz_results_")[1].split("_seed-")[0]
-        )
-
         # Placeholder attributes to satisfy the parent class
         self.input_params = None
         self.yaml_input_obj = None
@@ -383,9 +378,6 @@ class PatchedChaiOutput(ChaiOutput):
     def __init__(self, chai_output_dirs: list[str | Path]):
         """Avoid moving files around for Chai output processing."""
         self.output_dirs = [Path(x) for x in chai_output_dirs]
-
-        # The directory pattern is chai_{run_id}_seed-{seed}
-        self.name = self.output_dirs[0].name.split("chai_")[1].split("_seed-")[0]
 
         # Placeholder attributes to satisfy the parent class
         self.input_params = None
@@ -484,6 +476,7 @@ class PatchedChaiOutput(ChaiOutput):
                     elif file_.pathway.stem.startswith("pred.model"):
                         file_.name = f"Chai-1_{seed}_{model_number}"
                         # Chai cif not recognised by pae-viewer, so we load and save
+                        # TODO: pae-viewer requires the original .to_file?
                         file_.pathway = (
                             file_.pathway.parent / f"stripped-{file_.pathway.name}"
                         )

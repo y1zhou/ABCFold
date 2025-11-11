@@ -137,13 +137,11 @@ def fold_boltz(
 
     out_path = out_dir.expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
-    run_id = boltz_conf_path.stem
-    for seed in tqdm(conf.seeds, desc=f"Boltz run {run_id}"):
-        print(f"Boltz run {run_id} using seed {seed}")
+    for seed in tqdm(conf.seeds, desc="Boltz run"):
+        print(f"Boltz run using seed {seed}")
         run_boltz(
             output_dir=out_path,
             boltz_yaml_file=boltz_conf_path,
-            run_id=boltz_conf_path.stem,
             seed=seed,
             num_trunk_recycles=conf.num_trunk_recycles,
             num_diffn_timesteps=conf.num_diffn_timesteps,
@@ -151,7 +149,7 @@ def fold_boltz(
             boltz_additional_cli_args=conf.boltz_additional_cli_args,
         )
 
-    print(f"All Boltz runs for {run_id} completed. Output files are in {out_path}.")
+    print(f"All Boltz runs completed. Output files are in {out_path}.")
 
 
 if __name__ == "__main__":

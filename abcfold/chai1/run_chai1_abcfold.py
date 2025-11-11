@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pandas as pd
 import yaml
-from tqdm import tqdm
 
 from abcfold.schema import (
     ABCFoldConfig,
@@ -30,7 +29,6 @@ class ChaiConfig:
         self,
         conf: ABCFoldConfig,
         work_dir: str | Path,
-        run_id: str,
         ccd_lib_dir: str | Path | None = None,
     ):
         """Initialize ChaiConfig builder.
@@ -38,13 +36,11 @@ class ChaiConfig:
         Args:
             conf (ABCFoldConfig): ABCFold configuration object.
             work_dir (str | Path): Output directory for Chai-1 inputs.
-            run_id (str): Unique identifier for the run.
             ccd_lib_dir: Boltz cache directory for CCD ligands.
 
         """
         self.conf = conf
         self.work_dir = Path(work_dir).expanduser().resolve()
-        self.run_id = run_id
         self.ccd_lib_dir = (
             Path(ccd_lib_dir).expanduser().resolve()
             if ccd_lib_dir is not None
@@ -56,11 +52,9 @@ class ChaiConfig:
     def generate_chai_inputs(self):
         """Generate all Chai-1 input files."""
         # File paths
-        self.fasta = self.work_dir / f"{self.run_id}.fasta"
+        self.fasta = self.work_dir / "chai.fasta"
         self.restraints: Path | None = (
-            self.work_dir / f"{self.run_id}.restraints"
-            if self.conf.restraints
-            else None
+            self.work_dir / "chai.restraints" if self.conf.restraints else None
         )
         self.msa: Path | None = self.work_dir / "chai_msa"
         # TODO: handle templates
@@ -260,14 +254,12 @@ class ChaiConfig:
 
         The YAML file contains the following fields:
 
-        - run_id: Unique identifier for the run.
         - fasta: Path to the Chai FASTA file.
         - restraints: Path to the restraints file (if any).
         - msa: Path to the MSA directory (if any).
         - chain_id_mapping: Mapping from original chain IDs to Chai-assigned chain IDs.
         """
         chai_conf = {
-            "run_id": self.run_id,
             "fasta": str(self.fasta),
             "restraints": str(self.restraints) if self.restraints else None,
             "msa": str(self.msa) if self.msa else None,
@@ -400,9 +392,8 @@ def run_chai(
     import numpy as np
     from chai_lab.chai1 import run_inference
 
-    run_id = chai_conf["run_id"]
-    logger.info(f"Chai-1 run {run_id} using seed {seed}")
-    log_path = log_dir / f"chai_{run_id}_seed-{seed}.log"
+    logger.info(f"Running Chai-1 using seed {seed}")
+    log_path = log_dir / f"chai_seed-{seed}.log"
     logger.info(f"Saving logs to {log_path}")
     with (
         open(log_path, "w") as log_file,
@@ -416,7 +407,7 @@ def run_chai(
         now = time.time()
         log_file.write(f"Time: {str(datetime.now(UTC))}\n")
 
-        run_dir = workdir / f"chai_{run_id}_seed-{seed}"
+        run_dir = workdir / f"chai_seed-{seed}"
         run_dir.mkdir(parents=True, exist_ok=True)
         chai_models = run_inference(
             fasta_file=Path(chai_conf["fasta"]),
