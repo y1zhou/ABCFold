@@ -4,49 +4,50 @@ if [[ "${TRACE-0}" == "1" ]]; then
     set -o xtrace
 fi
 
+blue='\e[1;34m'
+green='\e[1;32m'
+end_hl='\e[0m'
+
+print_cmd() {
+    local col1="$1"
+    local col2="$2"
+    local col1_width="${3:-20}"
+    printf "${blue}%-${col1_width}s${end_hl} %s\n" "$col1" "$col2"
+}
+
 DOCSTRING="Run ABCFold2 Boltz and Chai folding pipeline.
 
-usage: ./$(basename "${0}") [options]
+${green}Usage:${end_hl} ./$(basename "${0}") [options]
 
-required arguments:
-  -i, --input-yaml        input ABCFold2 YAML configuration file
+${green}Required arguments:${end_hl}
+    $(print_cmd '-i, --input-yaml' 'input ABCFold2 YAML configuration file')
 
-options:
-  -h, --help              show this help message and exit
+${green}Options:${end_hl}
+    $(print_cmd '-h, --help' 'show this help message and exit')
 
-  I/O
-  ==========================================
-  -o, --output-dir        output directory to store results (default: <mktemp -d>). Note
-                            that content in this directory may be overwritten.
+    ${green}I/O${end_hl}
+    ==========================================
+    $(print_cmd '-o, --output-dir' 'output directory to store results (default: <mktemp -d>). Note that content in this directory may be overwritten.')
+    $(print_cmd '-r, --run-id' 'the name of this run (default: basename of input YAML without extension)')
 
-  -r, --run-id            the name of this run (default: basename of input YAML without extension)
+    ${green}Steps${end_hl}
+    ==========================================
+    $(print_cmd '--no-search-msa' 'if set, skip MSA search run folding directly (default: false). Note that if this is set, you probably also need to provide '--chai-template-m8' and '--chai-template-cif-dir' to specify the template information for Chai folding.')
+    $(print_cmd '--prepare-only' 'if set, only prepare inputs without running folding (default: false)')
+    $(print_cmd '--no-fold-boltz' 'if set, skip Boltz folding step (default: false)')
+    $(print_cmd '--no-fold-chai' 'if set, skip Chai folding step (default: false)')
+    $(print_cmd '--postprocess' 'if set, run postprocessing after folding (default: false)')
+    $(print_cmd '--dry-run' 'if set, perform a dry run without executing commands (default: false)')
 
-  Steps
-  ==========================================
-  --no-search-msa         if set, skip MSA search run folding directly (default: false).
-                            Note that if this is set, you probably also need to provide
-                            '--chai-template-m8' and '--chai-template-cif-dir' to specify
-                            the template information for Chai folding.
-
-  --postprocess           if set, run postprocessing after folding (default: false)
-
-  --dry-run               if set, perform a dry run without executing commands (default: false)
-
-  Directory and file configs
-  ==========================================
-  --abcfold-repo-dir      path to the ABCFold2 repository (default: inferred from script location)
-
-  --boltz-model-dir       path to the Boltz model checkpoints (default: \$BOLTZ_CACHE > ${HOME}/.boltz/)
-
-  --chai-model-dir        path to the Chai model checkpoints (default: \$CHAI_DOWNLOADS_DIR > <chai-package-root>/downloads/)
-
-  --template-cache-dir    path to the template cache directory (default: ${HOME}/.cache/rcsb/)
-
-  --ccd-lib-dir           path to the CCD library directory (default: \$BOLTZ_CACHE/mols/)
-
-  --chai-template-m8      path to the Chai template hits file (default: inferred from MSA search step)
-
-  --chai-template-cif-dir path to the Chai template CIF files directory (default: inferred from MSA search step)
+    ${green}Directory and file configs${end_hl}
+    ==========================================
+    $(print_cmd '--abcfold-repo-dir' 'path to the ABCFold2 repository (default: inferred from script location)')
+    $(print_cmd '--boltz-model-dir' "path to the Boltz model checkpoints (default: \$BOLTZ_CACHE > ${HOME}/.boltz/)")
+    $(print_cmd '--chai-model-dir' "path to the Chai model checkpoints (default: \$CHAI_DOWNLOADS_DIR > <chai-package-root>/downloads/)")
+    $(print_cmd '--template-cache-dir' "path to the template cache directory (default: ${HOME}/.cache/rcsb/)")
+    $(print_cmd '--ccd-lib-dir' "path to the CCD library directory (default: \$BOLTZ_CACHE/mols/)")
+    $(print_cmd '--chai-template-m8' 'path to the Chai template hits file (default: inferred from MSA search step)')
+    $(print_cmd '--chai-template-cif-dir' 'path to the Chai template CIF files directory (default: inferred from MSA search step)')
 "
 script_path="$(realpath "${0}")"
 script_dir="$(dirname "${script_path}")"
@@ -55,13 +56,16 @@ abcfold_repo_dir="$(realpath "${script_dir}/..")"
 template_cache_dir="${HOME}/.cache/rcsb"
 
 search_msa=1
+prepare_only=0
+skip_boltz=0
+skip_chai=0
 postprocess=0
 dry_run=0
 
 while [[ $# -gt 0 ]]; do
     case $1 in
     -h | --help)
-        echo "${DOCSTRING}"
+        echo -e "${DOCSTRING}"
         exit 0
         ;;
     -i | --input-yaml)
@@ -81,6 +85,18 @@ while [[ $# -gt 0 ]]; do
         ;;
     --no-search-msa)
         search_msa=0
+        shift
+        ;;
+    --prepare-only)
+        prepare_only=1
+        shift
+        ;;
+    --no-fold-boltz)
+        skip_boltz=1
+        shift
+        ;;
+    --no-fold-chai)
+        skip_chai=1
         shift
         ;;
     --postprocess)
@@ -130,7 +146,7 @@ while [[ $# -gt 0 ]]; do
         ;;
     *)
         echo "Unknown option: $1"
-        echo "${DOCSTRING}"
+        echo -e "${DOCSTRING}"
         exit 1
         ;;
     esac
@@ -149,17 +165,17 @@ if [ ! -f "${abcfold_config}" ]; then
 fi
 
 # Set default run ID if not provided
+conf_name="$(basename "${abcfold_config%.*}")"
 if [ -z "${abcfold_run_id:-}" ]; then
     # Handle both .yaml and .yml extensions
-    abcfold_run_id="$(basename "${abcfold_config%.*}")"
+    abcfold_run_id="${conf_name}"
 fi
 
 # Set default output directory if not provided
 if [ -z "${abcfold_out_dir:-}" ]; then
     abcfold_out_dir="$(mktemp -d)"
 fi
-abcfold_out_dir="$(realpath "${abcfold_out_dir}")"
-mkdir -p "${abcfold_out_dir}"
+abcfold_out_dir="$(realpath "${abcfold_out_dir}")/${abcfold_run_id}"
 
 # Set default Chai template paths
 if [ -z "${chai_template_m8:-}" ]; then
@@ -187,27 +203,31 @@ fi
 # Print out settings before running
 echo '=========================================='
 echo 'ABCFold2 run settings:'
-echo "  ABCFold2 repo:     ${abcfold_repo_dir}"
-echo "  Input YAML:        ${abcfold_config}"
-echo "  Output directory:  ${abcfold_out_dir}"
-echo "  Run ID:            ${abcfold_run_id}"
-echo "  Search MSA:        ${search_msa}"
-echo "  Postprocess:       ${postprocess}"
-echo "  Template cache:    ${template_cache_dir}"
-echo "  CCD library:       ${ccd_lib_dir}"
-echo "  Chai template M8 : ${chai_template_m8}"
-echo "  Chai template CIF: ${chai_template_cif_dir}"
+print_cmd '  ABCFold2 repo:' "${abcfold_repo_dir}"
+print_cmd '  Input YAML:' "${abcfold_config}"
+print_cmd '  Output directory:' "${abcfold_out_dir}"
+print_cmd '  Run ID:' "${abcfold_run_id}"
+print_cmd '  Search MSA:' "${search_msa}"
+print_cmd '  Prepare only:' "${prepare_only}"
+print_cmd '  Skip Boltz fold:' "${skip_boltz}"
+print_cmd '  Skip Chai fold:' "${skip_chai}"
+print_cmd '  Postprocess:' "${postprocess}"
+print_cmd '  Template cache:' "${template_cache_dir}"
+print_cmd '  CCD library:' "${ccd_lib_dir}"
+print_cmd '  Chai template M8:' "${chai_template_m8}"
+print_cmd '  Chai template CIF:' "${chai_template_cif_dir}"
 echo '=========================================='
 
 if [ "${dry_run}" -eq 1 ]; then
-    rmdir "${abcfold_out_dir}"
     exit 0
 fi
 
 # uv run abcfold2 validate $abcfold_config
 cd "${abcfold_repo_dir}" || exit 1 # Change to repo dir to run uv commands
 
-abcfold_msa_config="${abcfold_config}"
+mkdir -p "${abcfold_out_dir}"
+abcfold_msa_config="${abcfold_out_dir}/${abcfold_run_id}.yaml"
+
 if [ "${search_msa}" -eq 1 ]; then
     echo '[PROGRESS] Running MSA search...'
 
@@ -215,39 +235,62 @@ if [ "${search_msa}" -eq 1 ]; then
         -o "${abcfold_out_dir}" \
         --template-cache-dir "${template_cache_dir}"
 
-    abcfold_msa_config="${abcfold_out_dir}/${abcfold_run_id}.yaml"
+    # in case $conf_name and $abcfold_run_id differ
+    if [ "${conf_name}" != "${abcfold_run_id}" ]; then
+        echo "[INFO] Moving MSA YAML to ${abcfold_msa_config}"
+        mv "${abcfold_out_dir}/${conf_name}.yaml" "${abcfold_msa_config}"
+    fi
+
+    if [ ! -f "${abcfold_out_dir}/boltz_models/${abcfold_run_id}.yaml" ]; then
+        echo '[PROGRESS] Preparing Boltz inputs...'
+        uv run abcfold2 prepare boltz "${abcfold_msa_config}" -o "${abcfold_out_dir}"
+    fi
+    if [ ! -f "${abcfold_out_dir}/chai_models/${abcfold_run_id}.yaml" ]; then
+        echo '[PROGRESS] Preparing Chai inputs...'
+        uv run abcfold2 prepare chai "${abcfold_msa_config}" -o "${abcfold_out_dir}" \
+            --ccd-lib-dir "${ccd_lib_dir}"
+    fi
+else
+    echo '[PROGRESS] Skipping MSA search...'
+    if [ ! -f "${abcfold_msa_config}" ]; then
+        echo '[WARNING] YAML with MSA not found in output directory, copying input YAML as is.'
+        cp -an "${abcfold_config}" "${abcfold_msa_config}"
+    fi
 fi
 
-echo '[PROGRESS] Preparing Boltz inputs...'
-uv run abcfold2 prepare boltz "${abcfold_msa_config}" -o "${abcfold_out_dir}"
-echo '[PROGRESS] Preparing Chai inputs...'
-uv run abcfold2 prepare chai "${abcfold_msa_config}" -o "${abcfold_out_dir}" \
-    --ccd-lib-dir "${ccd_lib_dir}"
+if [ "${prepare_only}" -eq 1 ]; then
+    echo '[PROGRESS] Preparation only mode enabled, skipping folding steps.'
+    exit 0
+fi
 
-echo '[PROGRESS] Folding input with Boltz...'
-uv run abcfold2 fold boltz "${abcfold_msa_config}" \
-    -i "${abcfold_out_dir}/boltz_${abcfold_run_id}/${abcfold_run_id}.yaml" \
-    -o "${abcfold_out_dir}/boltz_${abcfold_run_id}/"
+if [ "${skip_boltz}" -eq 0 ]; then
+    echo '[PROGRESS] Folding input with Boltz...'
+    uv run abcfold2 fold boltz "${abcfold_msa_config}" \
+        -i "${abcfold_out_dir}/boltz_models/${abcfold_run_id}.yaml" \
+        -o "${abcfold_out_dir}/boltz_models/"
+fi
 
-echo '[PROGRESS] Folding input with Chai...'
-uv run abcfold2 fold chai "${abcfold_msa_config}" \
-    -i "${abcfold_out_dir}/chai_${abcfold_run_id}/${abcfold_run_id}.yaml" \
-    -o "${abcfold_out_dir}/chai_${abcfold_run_id}/" \
-    --template-hits-path "${chai_template_m8}" \
-    --template-cif-dir "${chai_template_cif_dir}"
+if [ "${skip_chai}" -eq 0 ]; then
+    echo '[PROGRESS] Folding input with Chai...'
+    uv run abcfold2 fold chai "${abcfold_msa_config}" \
+        -i "${abcfold_out_dir}/chai_models/${abcfold_run_id}.yaml" \
+        -o "${abcfold_out_dir}/chai_models/" \
+        --template-hits-path "${chai_template_m8}" \
+        --template-cif-dir "${chai_template_cif_dir}"
+fi
 
 if [ "${postprocess}" -eq 1 ]; then
     echo '[PROGRESS] Postprocessing results...'
     uv run abcfold2 postprocess collect -o "${abcfold_out_dir}" \
-        -b "${abcfold_out_dir}/boltz_${abcfold_run_id}/" \
-        -c "${abcfold_out_dir}/chai_${abcfold_run_id}/"
+        -b "${abcfold_out_dir}/boltz_models/" \
+        -c "${abcfold_out_dir}/chai_models/"
 else
     echo "[PROGRESS] Skipping postprocessing as per user request.
 Run the following command to postprocess later:
 
 uv run abcfold2 postprocess collect -o \"${abcfold_out_dir}\" \\
-    -b \"${abcfold_out_dir}/boltz_${abcfold_run_id}/\" \\
-    -c \"${abcfold_out_dir}/chai_${abcfold_run_id}/\"
+    -b \"${abcfold_out_dir}/boltz_models/\" \\
+    -c \"${abcfold_out_dir}/chai_models/\"
 "
 fi
 
