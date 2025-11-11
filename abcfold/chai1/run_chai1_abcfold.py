@@ -386,6 +386,11 @@ def run_chai(
     with open(chai_yaml_file) as f:
         chai_conf = yaml.safe_load(f)
 
+    # Skip if output already exists
+    run_dir = workdir / f"chai_seed-{seed}"
+    if (run_dir / "pae_scores.npy").exists():
+        return run_dir
+
     if template_cif_dir is not None:
         os.environ["CHAI_TEMPLATE_CIF_FOLDER"] = str(template_cif_dir)
 
@@ -407,7 +412,6 @@ def run_chai(
         now = time.time()
         log_file.write(f"Time: {str(datetime.now(UTC))}\n")
 
-        run_dir = workdir / f"chai_seed-{seed}"
         run_dir.mkdir(parents=True, exist_ok=True)
         chai_models = run_inference(
             fasta_file=Path(chai_conf["fasta"]),

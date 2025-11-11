@@ -43,6 +43,16 @@ def run_boltz(
         additional_args=boltz_additional_cli_args,
     )
 
+    # Skip if output already exists
+    final_out_dir = workdir / f"boltz_results_seed-{seed}"
+    if all(
+        (
+            final_out_dir / "predictions" / run_name / f"pae_{run_name}_model_{i}.npz"
+        ).exists()
+        for i in range(num_diffn_samples)
+    ):
+        return final_out_dir
+
     log_path = log_dir / f"boltz_seed-{seed}.log"
     with (
         sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT, encoding="utf-8") as p,  #  noqa: S603
@@ -71,7 +81,6 @@ def run_boltz(
             raise MemoryError("Boltz ran out of memory")
 
     # Move Boltz output files out of their subdirectories
-    final_out_dir = workdir / f"boltz_results_seed-{seed}"
     (workdir / f"boltz_seed_{seed}" / f"boltz_results_{run_name}").rename(final_out_dir)
     (workdir / f"boltz_seed_{seed}").rmdir()
 
