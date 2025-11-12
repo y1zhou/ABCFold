@@ -390,6 +390,11 @@ def run_chai(
     run_dir = workdir / f"chai_seed-{seed}"
     if (run_dir / "pae_scores.npy").exists():
         return run_dir
+    elif run_dir.exists():
+        # cleanup partial outputs
+        import shutil
+
+        shutil.rmtree(run_dir)
 
     if template_cif_dir is not None:
         os.environ["CHAI_TEMPLATE_CIF_FOLDER"] = str(template_cif_dir)

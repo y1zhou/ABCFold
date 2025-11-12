@@ -52,6 +52,10 @@ def run_boltz(
     ):
         return final_out_dir
 
+    # Cleanup partial outputs from previous failed runs
+    if (workdir / f"boltz_seed_{seed}" / f"boltz_results_{run_name}").exists():
+        shutil.rmtree(workdir / f"boltz_seed_{seed}" / f"boltz_results_{run_name}")
+
     log_path = log_dir / f"boltz_seed-{seed}.log"
     with (
         sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT, encoding="utf-8") as p,  #  noqa: S603
