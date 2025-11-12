@@ -1,6 +1,7 @@
 """Run Boltz using ABCFold config file."""
 
 import logging
+import shutil
 import subprocess as sp
 import time
 from datetime import UTC, datetime
@@ -46,9 +47,7 @@ def run_boltz(
     # Skip if output already exists
     final_out_dir = workdir / f"boltz_results_seed-{seed}"
     if all(
-        (
-            final_out_dir / "predictions" / run_name / f"pae_{run_name}_model_{i}.npz"
-        ).exists()
+        (final_out_dir / f"pae_model_{i}.npz").exists()
         for i in range(num_diffn_samples)
     ):
         return final_out_dir
@@ -81,8 +80,21 @@ def run_boltz(
             raise MemoryError("Boltz ran out of memory")
 
     # Move Boltz output files out of their subdirectories
-    (workdir / f"boltz_seed_{seed}" / f"boltz_results_{run_name}").rename(final_out_dir)
-    (workdir / f"boltz_seed_{seed}").rmdir()
+    # Note that lightning_logs/, msa/, and processed/ are thrown away
+    if final_out_dir.exists():
+        shutil.rmtree(final_out_dir)
+    (
+        workdir
+        / f"boltz_seed_{seed}"
+        / f"boltz_results_{run_name}"
+        / "predictions"
+        / run_name
+    ).rename(final_out_dir)
+    shutil.rmtree(workdir / f"boltz_seed_{seed}")
+
+    # Normalize file names under predictions/
+    for f in final_out_dir.iterdir():
+        f.rename(final_out_dir / f.name.replace(f"{run_name}_", ""))
 
     return final_out_dir
 

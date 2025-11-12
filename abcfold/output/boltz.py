@@ -142,7 +142,7 @@ class BoltzOutput:
                 file_groups[seed] = {}
 
             for output in pathway.rglob("*"):
-                number = output.stem.split("_model_")[-1]
+                number = output.stem.split("model_")[-1]
                 if not number.isdigit():
                     continue
                 number = int(number)
