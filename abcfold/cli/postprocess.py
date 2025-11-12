@@ -89,12 +89,7 @@ def build_output_pages(
                     plddt = insert_none_by_minus_one(indicies[index_counter], plddt)
                 index_counter += 1
                 model_data = get_model_data(
-                    model,
-                    plot_paths,
-                    program,
-                    plddt,
-                    score_file,
-                    out_path,
+                    model, plot_paths, program, plddt, score_file, out_path
                 )
                 combined_models.append(model_data)
 
@@ -345,7 +340,7 @@ class PatchedBoltzOutput(BoltzOutput):
             ):
                 pae = Af3Pae.from_boltz(pae_file.data, cif_file)
                 pae_path = pae_file.pathway
-                out_name = pae_path.with_name(f"af3-{pae_path.stem}.json")
+                out_name = pae_path.with_name(f"{pae_path.stem}-af3.json")
                 pae.to_file(out_name)
 
                 if seed not in new_pae_files:

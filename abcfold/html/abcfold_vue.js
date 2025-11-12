@@ -48,8 +48,8 @@ Vue.component('abc-table', {
                 }
             });
         }
-      },
-      methods: {
+    },
+    methods: {
         getButtonClass(modelSource) {
             switch (modelSource) {
                 case 'AlphaFold3':
@@ -89,7 +89,7 @@ Vue.component('abc-table', {
             </thead>
             <tbody>
                 <tr v-for="abcmodel in abc_models" :data-feature-name="abcmodel.model_id">
-                    <td><a v-bind:href="abcmodel.model_path" target="_blank">{{ abcmodel.model_id }}</a></td>
+                    <td><a v-bind:href="abcmodel.model_path" v-bind:download="abcmodel.model_id + '.cif'" target="_blank">{{ abcmodel.model_id }}</a></td>
                     <td>{{ abcmodel.model_source }}</td>
                     <td>{{ abcmodel.avg_plddt | decimalPlaces }}</td>
                     <td>{{ abcmodel.h_score }}</td>
@@ -211,15 +211,15 @@ Vue.component('abc-feature-viewer', {
             showAxis: true,
             showSequence: true,
             brushActive: true,
-            toolbar:true,
-            bubbleHelp:true,
-            zoomMax:10,
+            toolbar: true,
+            bubbleHelp: true,
+            zoomMax: 10,
         };
-        window.ft1 = new FeatureViewer.createFeature(sequence,"#div1", options);
+        window.ft1 = new FeatureViewer.createFeature(sequence, "#div1", options);
         this.generateABCFeatures();
 
-    selectTableAndFeatures(ft1);
-    collapseDiv("collapsible1");
+        selectTableAndFeatures(ft1);
+        collapseDiv("collapsible1");
     }
 });
 
