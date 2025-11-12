@@ -1,8 +1,9 @@
 """Run the post-processing steps for ABCFold."""
 
 import logging
+import shutil
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from tqdm import tqdm
@@ -13,6 +14,123 @@ from abcfold.output.chai import ChaiOutput
 logger = logging.getLogger(__name__)
 
 app = typer.Typer()
+
+
+def collect_models(
+    af3_results_dir: Path | None,
+    boltz_results_dir: Path | None,
+    chai_results_dir: Path | None,
+) -> tuple[None, BoltzOutput | None, ChaiOutput | None]:
+    """Collect generated structure models and corresponding score files."""
+    ao, bo, co = None, None, None
+    if af3_results_dir is not None:
+        raise NotImplementedError(
+            "AF3 is very low priority. Please use `abcfold` instead."
+        )
+
+    if boltz_results_dir is not None:
+        logger.info("Collecting Boltz results...")
+
+        boltz_out_dirs = list(boltz_results_dir.glob("boltz_results_seed-*"))
+        bo = PatchedBoltzOutput(boltz_out_dirs)
+
+    if chai_results_dir is not None:
+        logger.info("Collecting Chai results...")
+
+        chai_out_dirs = list(chai_results_dir.glob("chai_seed-*"))
+        co = PatchedChaiOutput(chai_out_dirs)
+
+    return ao, bo, co
+
+
+def build_output_pages(
+    models: list[BoltzOutput | ChaiOutput],
+    plot_paths: dict[str, str],
+    out_path: Path,
+    superpose_chains: str | None,
+) -> tuple[list[str], dict[str, Any]]:
+    """Combine models from different methods for post-processing."""
+    from abcfold.html.html_utils import (
+        get_all_cif_files,
+        get_model_data,
+        get_model_sequence_data,
+    )
+    from abcfold.output.file_handlers import superpose_models
+    from abcfold.output.utils import get_gap_indicies, insert_none_by_minus_one
+
+    cif_models = [
+        cif_file
+        for cif_list in get_all_cif_files(models).values()
+        for cif_file in cif_list
+    ]
+    indicies = get_gap_indicies(*cif_models)
+    index_counter = 0
+
+    programs_run = []
+    combined_models = []
+    for m_output in models:
+        if isinstance(m_output, BoltzOutput):
+            program = "Boltz"
+        elif isinstance(m_output, ChaiOutput):
+            program = "Chai-1"
+        else:
+            # TODO: Add AlphaFold 3 post-processing when needed
+            raise TypeError("Unknown model output type")
+
+        programs_run.append(program)
+        logger.info(f"Post-processing {program} models...")
+        for seed in m_output.output.keys():
+            for idx in m_output.output[seed].keys():
+                model = m_output.output[seed][idx]["cif"]
+                model.check_clashes()
+                score_file = m_output.output[seed][idx]["json"]
+                plddt = model.residue_plddts
+                if len(indicies) > 0:
+                    plddt = insert_none_by_minus_one(indicies[index_counter], plddt)
+                index_counter += 1
+                model_data = get_model_data(
+                    model,
+                    plot_paths,
+                    program,
+                    plddt,
+                    score_file,
+                    out_path,
+                )
+                combined_models.append(model_data)
+
+    # Copy structure models to separate folder
+    (out_path / "output_models").mkdir(exist_ok=True)
+    output_models = []
+    logger.info("Copying output model files...")
+    for model in combined_models:
+        cif_file = out_path.joinpath(model["model_path"])
+        output_name = f"{model['model_id']}.cif"
+        output_model_path = out_path.joinpath("output_models").joinpath(output_name)
+        if not output_model_path.exists():
+            shutil.copyfile(cif_file, output_model_path)
+        output_models.append(output_model_path)
+
+    logger.info("Superpositioning output models...")
+    if len(output_models) > 1:
+        superpose_models(output_models, superpose_chains)
+
+    logger.info("Preparing output score files...")
+    sequence_data = get_model_sequence_data(cif_models)
+    sequence = ""
+    for key in sequence_data.keys():
+        sequence += sequence_data[key]
+    chain_data = {}
+    ref = 0
+    for key in sequence_data.keys():
+        chain_data["Chain " + key] = (ref, len(sequence_data[key]) + ref - 1)
+        ref += len(sequence_data[key])
+    results_dict = {
+        "sequence": sequence,
+        "models": combined_models,
+        "plotly_path": Path(plot_paths["plddt"]).relative_to(out_path).as_posix(),
+        "chain_data": chain_data,
+    }
+    return programs_run, results_dict
 
 
 @app.command(name="collect")
@@ -60,178 +178,53 @@ def postprocess(
     Adapted from abcfold.abcfold:run.
     """
     # Collect output models from different methods
-    found_models = []
-    if af3_results_dir is not None:
-        raise NotImplementedError(
-            "AF3 is very low priority. Please use `abcfold` instead."
-        )
-
-    if boltz_results_dir is not None:
-        logger.info("Collecting Boltz results...")
-
-        boltz_out_dirs = list(boltz_results_dir.glob("boltz_results_seed-*"))
-        bo = PatchedBoltzOutput(boltz_out_dirs)
-        found_models.append(bo)
-
-    if chai_results_dir is not None:
-        logger.info("Collecting Chai results...")
-
-        chai_out_dirs = list(chai_results_dir.glob("chai_seed-*"))
-        co = PatchedChaiOutput(chai_out_dirs)
-        found_models.append(co)
-
-    # Compile data to make output page
+    ao, bo, co = collect_models(af3_results_dir, boltz_results_dir, chai_results_dir)
+    found_models = [x for x in (ao, bo, co) if x is not None]
     if not found_models:
         logger.warning("No output models found for further processing.")
         return
 
+    # Compile data to make output pages
     from abcfold.abcfold import PLOTS_DIR
-    from abcfold.html.html_utils import get_all_cif_files, get_model_data, plots
-    from abcfold.output.utils import get_gap_indicies, insert_none_by_minus_one
+    from abcfold.html.html_utils import plots
 
     out_path = Path(out_dir).expanduser().resolve()
     out_path.mkdir(parents=True, exist_ok=True)
 
     logger.info("Generating plots...")
     plot_dict = plots(found_models, out_path / PLOTS_DIR)
-
-    programs_run = []
-    cif_models = [
-        cif_file
-        for cif_list in get_all_cif_files(found_models).values()
-        for cif_file in cif_list
-    ]
-    indicies = get_gap_indicies(*cif_models)
-    index_counter = 0
-
-    alphafold_models = {"models": []}
-    # TODO: Add AlphaFold 3 post-processing when needed
-
-    boltz_models = {"models": []}
-    if boltz_results_dir is not None:
-        programs_run.append("Boltz")
-        logger.info("Post-processing Boltz models...")
-        for seed in bo.output.keys():
-            for idx in bo.output[seed].keys():
-                model = bo.output[seed][idx]["cif"]
-                model.check_clashes()
-                score_file = bo.output[seed][idx]["json"]
-                plddt = model.residue_plddts
-                if len(indicies) > 0:
-                    plddt = insert_none_by_minus_one(indicies[index_counter], plddt)
-                index_counter += 1
-                model_data = get_model_data(
-                    model,
-                    plot_dict,
-                    "Boltz",
-                    plddt,
-                    score_file,
-                    out_path,
-                )
-                boltz_models["models"].append(model_data)
-
-    chai_models = {"models": []}
-    if chai_results_dir is not None:
-        programs_run.append("Chai-1")
-        logger.info("Post-processing Chai models...")
-        for seed in co.output.keys():
-            for idx in co.output[seed].keys():
-                if idx >= 0:
-                    model = co.output[seed][idx]["cif"]
-                    model.check_clashes()
-                    score_file = co.output[seed][idx]["scores"]
-                    plddt = model.residue_plddts
-                    if len(indicies) > 0:
-                        plddt = insert_none_by_minus_one(indicies[index_counter], plddt)
-                    index_counter += 1
-                    model_data = get_model_data(
-                        model,
-                        plot_dict,
-                        "Chai-1",
-                        plddt,
-                        score_file,
-                        out_path,
-                    )
-                    chai_models["models"].append(model_data)
-
-    combined_models = (
-        alphafold_models["models"] + boltz_models["models"] + chai_models["models"]
+    programs_run, results_dict = build_output_pages(
+        found_models, plot_dict, out_path, superpose_chains
     )
-    # Generate output page
-    import shutil
 
+    # Create the index page
     import orjson
 
     from abcfold.abcfold import HTML_DIR, HTML_TEMPLATE
-    from abcfold.html.html_utils import get_model_sequence_data, render_template
-    from abcfold.output.file_handlers import superpose_models
+    from abcfold.html.html_utils import render_template
 
-    (out_path / "output_models").mkdir(exist_ok=True)
-    output_models = []
-    logger.info("Copying output model files...")
-    for model in combined_models:
-        cif_file = out_path.joinpath(model["model_path"])
-        # if model["model_source"] == "AlphaFold3":
-        #     output_name = "af3_model_" + model["model_id"][-1] + ".cif"
-        # elif model["model_source"] == "Boltz":
-        #     output_name = "boltz_model_" + model["model_id"][-1] + ".cif"
-        # elif model["model_source"] == "Chai-1":
-        #     output_name = "chai_model_" + model["model_id"][-1] + ".cif"
-        output_name = f"{model['model_id']}.cif"
-        output_model_path = out_path.joinpath("output_models").joinpath(output_name)
-        if not output_model_path.exists():
-            shutil.copyfile(cif_file, output_model_path)
-        output_models.append(output_model_path)
-
-    logger.info("Superpositioning output models...")
-    if len(output_models) > 1:
-        superpose_models(output_models, superpose_chains)
-
-    logger.info("Preparing output score files...")
-    sequence_data = get_model_sequence_data(cif_models)
-    sequence = ""
-    for key in sequence_data.keys():
-        sequence += sequence_data[key]
-    chain_data = {}
-    ref = 0
-    for key in sequence_data.keys():
-        chain_data["Chain " + key] = (ref, len(sequence_data[key]) + ref - 1)
-        ref += len(sequence_data[key])
-    results_dict = {
-        "sequence": sequence,
-        "models": combined_models,
-        "plotly_path": Path(plot_dict["plddt"]).relative_to(out_path).as_posix(),
-        "chain_data": chain_data,
-    }
+    logger.info("Generating output HTML page...")
     results_json = orjson.dumps(results_dict).decode()
-
     if not out_path.joinpath(".feature_viewer").exists():
         shutil.copytree(HTML_DIR, out_path / ".feature_viewer")
 
-    if len(programs_run) > 1:
-        programs = (
-            "Structure predictions for: "
-            + ", ".join(programs_run[:-1])
-            + " and "
-            + programs_run[-1]
-        )
-    else:
-        programs = "Structure predictions for: " + programs_run[0]
+    programs = (
+        f"Structure predictions for: {', '.join(programs_run[:-1])}, and {programs_run[-1]}"
+        if len(programs_run) > 1
+        else f"Structure predictions for: {programs_run[0]}"
+    )
 
-    # Create the index page
-    logger.info("Generating output HTML page...")
-    HTML_OUT = out_path.joinpath("index.html")
-    html_out = Path(HTML_OUT).resolve()
+    html_out_path = out_path.joinpath("index.html").resolve()
     render_template(
         HTML_TEMPLATE,
-        html_out,
+        html_out_path,
         # kwargs appear as variables in the template
         abcfold_html_dir=".feature_viewer",
         programs=programs,
         results_json=results_json,
         version=0.1,
     )
-    logger.info(f"Output page written to {HTML_OUT}")
+    logger.info(f"Output page written to {html_out_path}")
 
 
 @app.command(name="serve")
@@ -352,7 +345,7 @@ class PatchedBoltzOutput(BoltzOutput):
             ):
                 pae = Af3Pae.from_boltz(pae_file.data, cif_file)
                 pae_path = pae_file.pathway
-                out_name = pae_path.with_name(f"{pae_path.stem}-af3.json")
+                out_name = pae_path.with_name(f"af3-{pae_path.stem}.json")
                 pae.to_file(out_name)
 
                 if seed not in new_pae_files:

@@ -366,7 +366,7 @@ def run_chai(
         num_diffn_timesteps: Number of diffusion timesteps to use.
         num_diffn_samples: Number of diffusion samples to generate.
         num_trunk_samples: Number of trunk samples to generate. When >1, Chai-1
-            performs multiple runs with `seed + i` for `i` in `[0, num_trunk_recycles)`.
+            performs multiple runs with `seed + i` for `i` in `[0, num_trunk_samples)`.
         low_memory: Whether to run Chai-1 in low memory mode.
 
     Returns:
@@ -387,6 +387,7 @@ def run_chai(
         chai_conf = yaml.safe_load(f)
 
     # Skip if output already exists
+    # TODO: deal with cases where num_trunk_samples > 1
     run_dir = workdir / f"chai_seed-{seed}"
     if (run_dir / "pae_scores.npy").exists():
         return run_dir
