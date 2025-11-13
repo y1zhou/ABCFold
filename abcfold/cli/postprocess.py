@@ -83,7 +83,7 @@ def build_output_pages(
             for idx in m_output.output[seed].keys():
                 model = m_output.output[seed][idx]["cif"]
                 model.check_clashes()
-                score_file = m_output.output[seed][idx]["json"]
+                score_file = m_output.output[seed][idx]["scores"]
                 plddt = model.residue_plddts
                 if len(indicies) > 0:
                     plddt = insert_none_by_minus_one(indicies[index_counter], plddt)
@@ -352,7 +352,7 @@ class PatchedBoltzOutput(BoltzOutput):
                 i: {
                     "cif": cif_file,
                     "af3_pae": new_pae_files[seed][i],
-                    "json": self.output[seed][i]["json"],
+                    "scores": self.output[seed][i]["json"],
                 }
                 for i, cif_file in enumerate(self.cif_files[seed])
             }
@@ -465,10 +465,10 @@ class PatchedChaiOutput(ChaiOutput):
                         file_.name = f"Chai-1_{seed}_{model_number}"
                         # Chai cif not recognised by pae-viewer, so we load and save
                         # TODO: pae-viewer requires the original .to_file?
-                        file_.pathway = (
-                            file_.pathway.parent / f"stripped-{file_.pathway.name}"
-                        )
-                        file_.to_file(file_.pathway)
+                        # file_.pathway = (
+                        #     file_.pathway.parent / f"stripped-{file_.pathway.name}"
+                        # )
+                        # file_.to_file(file_.pathway)
                         intermediate_dict["cif"] = file_
 
                 if pae_file_data is not None:
