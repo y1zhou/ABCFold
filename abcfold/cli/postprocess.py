@@ -338,10 +338,11 @@ class PatchedBoltzOutput(BoltzOutput):
             for pae_file, cif_file in zip(
                 self.pae_files[seed], self.cif_files[seed], strict=True
             ):
-                pae = Af3Pae.from_boltz(pae_file.data, cif_file)
                 pae_path = pae_file.pathway
                 out_name = pae_path.with_name(f"{pae_path.stem}-af3.json")
-                pae.to_file(out_name)
+                if not out_name.exists():
+                    pae = Af3Pae.from_boltz(pae_file.data, cif_file)
+                    pae.to_file(out_name)
 
                 if seed not in new_pae_files:
                     new_pae_files[seed] = []
@@ -505,10 +506,11 @@ class PatchedChaiOutput(ChaiOutput):
             for i, (pae_file, cif_file) in enumerate(
                 zip(self.pae_files[seed], self.cif_files[seed], strict=True)
             ):
-                pae = Af3Pae.from_chai1(pae_file.data[i], cif_file)
                 pae_path = pae_file.pathway
                 out_name = pae_path.with_name(f"{pae_path.stem}-af3.json")
-                pae.to_file(out_name)
+                if not out_name.exists():
+                    pae = Af3Pae.from_chai1(pae_file.data[i], cif_file)
+                    pae.to_file(out_name)
 
                 if seed not in new_pae_files:
                     new_pae_files[seed] = []
