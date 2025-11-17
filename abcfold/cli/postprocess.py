@@ -43,11 +43,44 @@ def collect_models(
     return ao, bo, co
 
 
-def build_output_pages(
+def cif_to_pdb_models(
     models: list[BoltzOutput | ChaiOutput],
-    plot_paths: dict[str, str],
-    out_path: Path,
+    pdb_out_dir: str | Path,
     superpose_chains: str | None,
+) -> list[BoltzOutput | ChaiOutput]:
+    """Convert structure models to separate folder in PDB format.
+
+    This is for maximum compatibility with pae-viewer, as it only has limited support
+    for PDBx/mmCIF files.
+    """
+    from abcfold.output.file_handlers import CifFile, superpose_models
+
+    pdb_out_path = Path(pdb_out_dir)
+
+    pdb_model_paths: list[Path] = []
+    logger.info("Converting output model files to PDB...")
+    for m in models:
+        for cif_models in m.cif_files.values():
+            for cif_model in cif_models:
+                cif_model: CifFile
+                output_pdb_name = f"{cif_model.name}.pdb"
+                output_model_path = pdb_out_path / output_pdb_name
+
+                if not output_model_path.exists():
+                    cif_model.model.write_pdb(str(output_model_path))
+
+                pdb_model_paths.append(output_model_path)
+                cif_model.pathway = output_model_path
+
+    if len(pdb_model_paths) > 1:
+        logger.info("Superpositioning output models...")
+        superpose_models(pdb_model_paths, superpose_chains)
+
+    return models
+
+
+def build_output_pages(
+    models: list[BoltzOutput | ChaiOutput], plot_paths: dict[str, str], out_path: Path
 ) -> tuple[list[str], dict[str, Any]]:
     """Combine models from different methods for post-processing."""
     from abcfold.html.html_utils import (
@@ -92,22 +125,6 @@ def build_output_pages(
                     model, plot_paths, program, plddt, score_file, out_path
                 )
                 combined_models.append(model_data)
-
-    # Copy structure models to separate folder
-    (out_path / "output_models").mkdir(exist_ok=True)
-    output_models = []
-    logger.info("Copying output model files...")
-    for model in combined_models:
-        cif_file = out_path.joinpath(model["model_path"])
-        output_name = f"{model['model_id']}.cif"
-        output_model_path = out_path.joinpath("output_models").joinpath(output_name)
-        if not output_model_path.exists():
-            shutil.copyfile(cif_file, output_model_path)
-        output_models.append(output_model_path)
-
-    logger.info("Superpositioning output models...")
-    if len(output_models) > 1:
-        superpose_models(output_models, superpose_chains)
 
     logger.info("Preparing output score files...")
     sequence_data = get_model_sequence_data(cif_models)
@@ -179,18 +196,19 @@ def postprocess(
         logger.warning("No output models found for further processing.")
         return
 
+    out_path = Path(out_dir).expanduser().resolve()
+    (out_path / "output_models").mkdir(parents=True, exist_ok=True)
+    found_models = cif_to_pdb_models(
+        found_models, out_path / "output_models", superpose_chains
+    )
+
     # Compile data to make output pages
     from abcfold.abcfold import PLOTS_DIR
     from abcfold.html.html_utils import plots
 
-    out_path = Path(out_dir).expanduser().resolve()
-    out_path.mkdir(parents=True, exist_ok=True)
-
     logger.info("Generating plots...")
     plot_dict = plots(found_models, out_path / PLOTS_DIR)
-    programs_run, results_dict = build_output_pages(
-        found_models, plot_dict, out_path, superpose_chains
-    )
+    programs_run, results_dict = build_output_pages(found_models, plot_dict, out_path)
 
     # Create the index page
     import orjson

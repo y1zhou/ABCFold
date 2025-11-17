@@ -765,6 +765,7 @@ def superpose_models(
         chain_ids = {chain.name for chain in ref_model}
 
     for model in models_list[1:]:
+        alt_file_type = model.suffix[1:].lower()
         alt_structure = gemmi.read_structure(str(model), format=gemmi.CoorFormat.Detect)
         alt_structure.setup_entities()
         alt_model = alt_structure[0]
@@ -796,4 +797,10 @@ def superpose_models(
 
         sup = gemmi.superpose_positions(ref_atoms, alt_atoms)
         alt_model.transform_pos_and_adp(sup.transform)
-        alt_structure.make_mmcif_document().write_file(str(model))
+        match alt_file_type:
+            case "pdb":
+                alt_structure.write_pdb(str(model))
+            case "cif":
+                alt_structure.make_mmcif_document().write_file(str(model))
+            case _:
+                raise ValueError(f"Unsupported file type: {alt_file_type}")
