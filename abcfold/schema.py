@@ -320,7 +320,6 @@ def add_msa_to_config(
     out_dir: str | Path,
     chains: set[str] | None = None,
     search_templates: bool = True,
-    fetch_templates: bool = True,
     template_cache_dir: Path | None = None,
 ) -> ABCFoldConfig:
     """Add MSA paths to protein sequences in the config.
@@ -330,7 +329,6 @@ def add_msa_to_config(
         out_dir: Output directory to store MSA files.
         chains: Set of chain IDs to process. If None, process all protein chains.
         search_templates: Whether to search for templates.
-        fetch_templates: Whether to fetch mmCIF templates from RCSB.
         template_cache_dir: Directory to cache fetched templates. Defaults to
             ~/.cache/rcsb/ if not set.
 
@@ -362,7 +360,9 @@ def add_msa_to_config(
     )
 
     # Fetch templates from RCSB if needed
-    if fetch_templates:
+    # TODO: make dummy m8 file when search_templates is False and custom templates are provided
+    template_map: dict[str, list[StructuralTemplate]] = {}
+    if search_templates:
         template_cache = (
             Path("~/.cache/rcsb") if template_cache_dir is None else template_cache_dir
         )
@@ -384,7 +384,6 @@ def add_msa_to_config(
             templates_path, index=False, header=False, sep="\t"
         )
 
-        template_map: dict[str, list[StructuralTemplate]] = {}
         hash_to_chains: dict[str, list[str]] = {
             seq.seq_hash: (seq.id if isinstance(seq.id, list) else [seq.id])
             for seq in conf.sequences
@@ -415,7 +414,7 @@ def add_msa_to_config(
 
     # Update config with MSA paths and templates
     (out_path / "templates").mkdir(parents=True, exist_ok=True)
-    for i, seq in enumerate(conf.sequences):
+    for seq in conf.sequences:
         if not isinstance(seq, ProteinSeq):
             continue
         if isinstance(seq.id, str) and seq.id not in chains:
@@ -423,18 +422,18 @@ def add_msa_to_config(
         elif isinstance(seq.id, list) and not any(c in chains for c in seq.id):
             continue
 
-        conf.sequences[i].msa_dir = str(out_path)
+        seq.msa_dir = str(out_path)
 
+        custom_templates = seq.templates or []
         if seq.seq_hash in template_map:
-            custom_templates = seq.templates or []
-            conf.sequences[i].templates = custom_templates + template_map[seq.seq_hash]
+            seq.templates = custom_templates + template_map[seq.seq_hash]
 
-            # Soft link all templates to out-dir/templates
-            for j, t in enumerate(conf.sequences[i].templates):
-                template_path = Path(t.path)
-                link_path = out_path / "templates" / template_path.name
-                if not link_path.exists():
-                    link_path.symlink_to(template_path)
-                conf.sequences[i].templates[j].path = str(link_path)
+        # Soft link all templates to out-dir/templates
+        for t in seq.templates or []:
+            template_path = Path(t.path)
+            link_path = out_path / "templates" / template_path.name
+            if not link_path.exists():
+                link_path.symlink_to(template_path)
+            t.path = str(link_path)
 
     return conf

@@ -42,10 +42,6 @@ def search_msa(
     search_templates: Annotated[
         bool, typer.Option(help="Whether to search for templates.", flag_value=True)
     ] = True,
-    fetch_templates: Annotated[
-        bool,
-        typer.Option(help="Whether to fetch templates from RCSB.", flag_value=True),
-    ] = True,
     template_cache_dir: Annotated[
         Path | None,
         typer.Option(
@@ -68,12 +64,7 @@ def search_msa(
 
     search_chains = set(chains.split(",")) if chains is not None else None
     conf = add_msa_to_config(
-        conf,
-        out_path / "msa",
-        search_chains,
-        search_templates,
-        fetch_templates,
-        template_cache_dir,
+        conf, out_path / "msa", search_chains, search_templates, template_cache_dir
     )
     print(f"MSA files generated in: {out_path / 'msa'}")
     new_conf_path = out_path / f"{conf_path.stem}.yaml"
