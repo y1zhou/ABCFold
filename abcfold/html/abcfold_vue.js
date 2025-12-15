@@ -89,7 +89,7 @@ Vue.component('abc-table', {
             </thead>
             <tbody>
                 <tr v-for="abcmodel in abc_models" :data-feature-name="abcmodel.model_id">
-                    <td><a v-bind:href="abcmodel.model_path" v-bind:download="abcmodel.model_id + '.cif'" target="_blank">{{ abcmodel.model_id }}</a></td>
+                    <td><a v-bind:href="abcmodel.model_path" v-bind:download="abcmodel.model_id + '.pdb'" target="_blank">{{ abcmodel.model_id }}</a></td>
                     <td>{{ abcmodel.model_source }}</td>
                     <td>{{ abcmodel.avg_plddt | decimalPlaces }}</td>
                     <td>{{ abcmodel.h_score }}</td>
