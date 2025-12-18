@@ -451,6 +451,10 @@ def run_chai(
             raise RuntimeError(f"Chai-1 run failed using seed {seed}.")
 
         for i in range(num_diffn_samples):
+            # Save pLDDT to separate files for easier downstream processing
+            # chai_models.plddt has dim (num_diffn_samples, N)
+            np.save(f"{run_dir}/plddt.model_idx_{i}.npy", chai_models.plddt[i])
+
             # chai_models.pae has dim (num_diffn_samples, N, N)
             np.save(f"{run_dir}/pae.model_idx_{i}.npy", chai_models.pae[i])
 
