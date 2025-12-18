@@ -62,10 +62,14 @@ def search_msa(
         shutil.rmtree(out_path, ignore_errors=True)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    search_chains = set(chains.split(",")) if chains is not None else None
-    conf = add_msa_to_config(
-        conf, out_path / "msa", search_chains, search_templates, template_cache_dir
-    )
+    if chains is not None and chains == "empty":
+        # Special case to skip MSA generation
+        pass
+    else:
+        search_chains = set(chains.split(",")) if chains is not None else None
+        conf = add_msa_to_config(
+            conf, out_path / "msa", search_chains, search_templates, template_cache_dir
+        )
     print(f"MSA files generated in: {out_path / 'msa'}")
     new_conf_path = out_path / f"{conf_path.stem}.yaml"
     write_config(conf, new_conf_path)
