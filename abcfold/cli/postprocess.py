@@ -421,6 +421,8 @@ class PatchedChaiOutput(ChaiOutput):
         - Bypass calling `self.update_chain_labels()`.
         - Only glob for '*.model_idx*' files instead of all possible output files.
         """
+        import numpy as np
+
         from abcfold.output.file_handlers import CifFile, FileTypes, NpyFile, NpzFile
 
         file_groups = {}
@@ -432,10 +434,12 @@ class PatchedChaiOutput(ChaiOutput):
 
             # Handle PAE scores
             if (pae_file := pathway / "pae_scores.npy").exists():
-                if -1 not in file_groups[seed]:
-                    file_groups[seed][-1] = [NpyFile(str(pae_file))]
-                else:
-                    file_groups[seed][-1].append(NpyFile(str(pae_file)))
+                # Compatibility with previous implementation which dumped all PAE scores into one file
+                # When such cases are detected, split them into per-model files and remove the old file
+                pae_scores = np.load(pae_file)
+                for i in range(pae_scores.shape[0]):
+                    np.save(pathway / f"pae.model_idx_{i}.npy", pae_scores[i])
+                pae_file.unlink()
 
             for output in pathway.rglob("*.model_idx_*"):
                 number = output.stem.split(".model_idx_")[-1]
@@ -489,17 +493,8 @@ class PatchedChaiOutput(ChaiOutput):
                         # )
                         # file_.to_file(file_.pathway)
                         intermediate_dict["cif"] = file_
-
-                if pae_file_data is not None:
-                    # new_pae_path = (
-                    #     file_.pathway.parent / f"pae_scores_model_{model_number}.npy"
-                    # )
-                    # if not new_pae_path.exists():
-                    #     import shutil
-
-                    #     shutil.copy(pae_file_data.pathway, new_pae_path)
-                    # intermediate_dict["pae"] = NpyFile(str(new_pae_path))
-                    intermediate_dict["pae"] = pae_file_data
+                    elif file_.pathway.stem.startswith("pae.model"):
+                        intermediate_dict["pae"] = file_
 
                 model_number_file_type_file[model_number] = intermediate_dict
 
@@ -527,7 +522,7 @@ class PatchedChaiOutput(ChaiOutput):
                 pae_path = pae_file.pathway
                 out_name = pae_path.with_name(f"{pae_path.stem}-af3.json")
                 if not out_name.exists():
-                    pae = Af3Pae.from_chai1(pae_file.data[i], cif_file)
+                    pae = Af3Pae.from_chai1(pae_file.data, cif_file)
                     pae.to_file(out_name)
 
                 if seed not in new_pae_files:

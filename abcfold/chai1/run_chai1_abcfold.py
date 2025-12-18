@@ -376,6 +376,8 @@ def run_chai(
     import os
     from contextlib import redirect_stderr, redirect_stdout
 
+    import numpy as np
+
     workdir = Path(output_dir).expanduser().resolve()
     log_dir = workdir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -389,7 +391,17 @@ def run_chai(
     # Skip if output already exists
     # TODO: deal with cases where num_trunk_samples > 1
     run_dir = workdir / f"chai_seed-{seed}"
+
+    # Compatibility with previous implementation which dumped all PAE scores into one file
+    # When such cases are detected, split them into per-model files and remove the old file
     if (run_dir / "pae_scores.npy").exists():
+        pae_scores = np.load(run_dir / "pae_scores.npy")
+        if pae_scores.shape[0] == num_diffn_samples:
+            for i in range(num_diffn_samples):
+                np.save(f"{run_dir}/pae.model_idx_{i}.npy", pae_scores[i])
+            (run_dir / "pae_scores.npy").unlink()
+            return run_dir
+    if (run_dir / f"pae.model_idx_{num_diffn_samples - 1}.npy").exists():
         return run_dir
     elif run_dir.exists():
         # cleanup partial outputs
@@ -400,7 +412,6 @@ def run_chai(
     if template_cif_dir is not None:
         os.environ["CHAI_TEMPLATE_CIF_FOLDER"] = str(template_cif_dir)
 
-    import numpy as np
     from chai_lab.chai1 import run_inference
 
     logger.info(f"Running Chai-1 using seed {seed}")
@@ -439,7 +450,9 @@ def run_chai(
         if not chai_models:
             raise RuntimeError(f"Chai-1 run failed using seed {seed}.")
 
-        np.save(f"{run_dir}/pae_scores.npy", chai_models.pae)
+        for i in range(num_diffn_samples):
+            # chai_models.pae has dim (num_diffn_samples, N, N)
+            np.save(f"{run_dir}/pae.model_idx_{i}.npy", chai_models.pae[i])
 
         log_file.write(f"\nFinished at: {str(datetime.now(UTC))}\n")
         log_file.write(f"Elapsed time: {time.time() - now:.2f} seconds\n")
