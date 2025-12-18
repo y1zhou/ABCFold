@@ -33,6 +33,7 @@ ${green}Options:${end_hl}
     ${green}Steps${end_hl}
     ==========================================
     $(print_cmd '--no-search-msa' 'if set, skip MSA search run folding directly (default: false). Note that if this is set, you probably also need to provide '--chai-template-m8' and '--chai-template-cif-dir' to specify the template information for Chai folding.')
+    $(print_cmd '--msa-chains' 'if provided, only search MSA for the specified comma-separated chain IDs (default: all chains in input YAML). Example: A,B')
     $(print_cmd '--prepare-only' 'if set, only prepare inputs without running folding (default: false)')
     $(print_cmd '--no-fold-boltz' 'if set, skip Boltz folding step (default: false)')
     $(print_cmd '--no-fold-chai' 'if set, skip Chai folding step (default: false)')
@@ -85,6 +86,11 @@ while [[ $# -gt 0 ]]; do
         ;;
     --no-search-msa)
         search_msa=0
+        shift
+        ;;
+    --msa-chains)
+        msa_chains="${2}"
+        shift
         shift
         ;;
     --prepare-only)
@@ -231,9 +237,12 @@ abcfold_msa_config="${abcfold_out_dir}/${abcfold_run_id}.yaml"
 if [ "${search_msa}" -eq 1 ]; then
     echo '[PROGRESS] Running MSA search...'
 
-    uv run abcfold2 prepare msa "${abcfold_config}" -f \
-        -o "${abcfold_out_dir}" \
-        --template-cache-dir "${template_cache_dir}"
+    abcfold_msa_args=('-f' '-o' "${abcfold_out_dir}" '--template-cache-dir' "${template_cache_dir}")
+    if [ -n "${msa_chains:-}" ]; then
+        abcfold_msa_args+=('--chains' "${msa_chains}")
+    fi
+
+    uv run abcfold2 prepare msa "${abcfold_config}" "${abcfold_msa_args[@]}"
 
     # in case $conf_name and $abcfold_run_id differ
     if [ "${conf_name}" != "${abcfold_run_id}" ]; then
