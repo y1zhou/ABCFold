@@ -505,8 +505,10 @@ def abcfold_to_boltz(
                 BoltzPocket(
                     binder=restraint.boltz_binder_chain,
                     contacts=[
-                        _build_contact_elem_from_list(restraint.atom1),
-                        _build_contact_elem_from_list(restraint.atom2),
+                        # Exclude the binder chain because it contains dummy values
+                        _build_contact_elem_from_list(r)
+                        for r in (restraint.atom1, restraint.atom2)
+                        if r.chain_id != restraint.boltz_binder_chain
                     ],
                     max_distance=restraint.max_distance,
                     force=restraint.enable_boltz_force,
