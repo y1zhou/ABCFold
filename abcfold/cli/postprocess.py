@@ -218,6 +218,9 @@ def postprocess(
 
     logger.info("Generating output HTML page...")
     results_json = orjson.dumps(results_dict).decode()
+    if not (out_path / "scores.json").exists():
+        with open(out_path / "scores.json", "w") as f:
+            f.write(results_json)
     if not out_path.joinpath(".feature_viewer").exists():
         shutil.copytree(HTML_DIR, out_path / ".feature_viewer")
 
