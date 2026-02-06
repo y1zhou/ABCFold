@@ -14,7 +14,9 @@ from abcfold.argparse_utils import (alphafold_argparse_util,
                                     boltz_argparse_util, chai_argparse_util,
                                     custom_template_argpase_util,
                                     main_argpase_util, mmseqs2_argparse_util,
+                                    openfold_argparse_util,
                                     prediction_argparse_util,
+                                    protenix_argparse_util,
                                     raise_argument_errors,
                                     visuals_argparse_util)
 from abcfold.html.html_utils import (PORT, NoCacheHTTPRequestHandler,
@@ -26,10 +28,13 @@ from abcfold.output.alphafold3 import AlphafoldOutput
 from abcfold.output.boltz import BoltzOutput
 from abcfold.output.chai import ChaiOutput
 from abcfold.output.file_handlers import superpose_models
+from abcfold.output.openfold3 import OpenfoldOutput
+from abcfold.output.protenix import ProtenixOutput
 from abcfold.output.utils import (get_gap_indicies, insert_none_by_minus_one,
                                   make_dummy_m8_file)
 from abcfold.scripts.abc_script_utils import (check_input_json, make_dir,
                                               make_dummy_af3_db, setup_logger)
+from abcfold.scripts.add_custom_template import add_custom_template
 from abcfold.scripts.add_mmseqs_msa import add_msa_to_json
 
 logger = setup_logger()
@@ -71,6 +76,10 @@ def run(args, config, defaults, config_file):
     if args.database_dir is not None and args.database_dir != defaults["database_dir"]:
         config.set("Databases", "database_dir", args.database_dir)
         updated_config = True
+    af3_sif = args.af3_sif_path
+    if af3_sif is not None and af3_sif != defaults.get("af3_sif_path"):
+        config.set("Sif_paths", "af3_sif_path", af3_sif)
+        updated_config = True
     if updated_config:
         with open(config_file, "w") as f:
             config.write(f)
@@ -91,21 +100,6 @@ def run(args, config, defaults, config_file):
         logger.error("Input JSON must contain a 'name' field")
         sys.exit(1)
 
-    if args.alphafold3:
-        from abcfold.alphafold3.check_install import check_af3_install
-
-        check_af3_install(interactive=False, sif_path=args.sif_path)
-
-    if args.boltz:
-        from abcfold.boltz.check_install import check_boltz
-
-        check_boltz()
-
-    if args.chai1:
-        from abcfold.chai1.check_install import check_chai1
-
-        check_chai1()
-
     with tempfile.TemporaryDirectory() as temp_dir_str:
         temp_dir = Path(temp_dir_str)
         if args.mmseqs2:
@@ -115,6 +109,7 @@ def run(args, config, defaults, config_file):
                     input_json.name.replace(".json", "_mmseqs.json")
                 )
             else:
+                input_json = Path(args.input_json)
                 run_json = Path(args.output_json)
 
             input_params = add_msa_to_json(
@@ -123,16 +118,22 @@ def run(args, config, defaults, config_file):
                 templates=args.templates,
                 num_templates=args.num_templates,
                 chai_template_output=temp_dir.joinpath("all_chains.m8"),
-                custom_template=args.custom_template,
-                custom_template_chain=args.custom_template_chain,
-                target_id=args.target_id,
                 input_params=input_params,
                 output_json=run_json,
                 to_file=True,
             )
-
         else:
             run_json = Path(args.input_json)
+
+        if args.custom_template is not None:
+            add_custom_template(
+                run_json,
+                args.target_id,
+                args.custom_template,
+                args.custom_template_chain,
+                output_json=run_json,
+                to_file=True
+            )
 
         successful_runs = []
         if args.alphafold3:
@@ -153,7 +154,8 @@ def run(args, config, defaults, config_file):
                 database_dir=af3_database,
                 number_of_models=args.number_of_models,
                 num_recycles=args.num_recycles,
-                sif_path=args.sif_path,
+                sif_path=af3_sif,
+                save_distogram=args.save_distogram
             )
 
             if af3_success:
@@ -192,7 +194,7 @@ def run(args, config, defaults, config_file):
 
             template_hits_path = None
             if args.templates and args.mmseqs2:
-                template_hits_path = temp_dir.joinpath("all_chain.m8")
+                template_hits_path = temp_dir.joinpath("all_chains.m8")
             elif args.templates:
                 template_hits_path = make_dummy_m8_file(run_json, temp_dir)
 
@@ -210,6 +212,49 @@ def run(args, config, defaults, config_file):
                 co = ChaiOutput(chai_output_dirs, input_params, name, args.save_input)
                 outputs.append(co)
             successful_runs.append(chai_success)
+
+        if args.protenix:
+            from abcfold.protenix.run_protenix import run_protenix
+
+            protenix_success = run_protenix(
+                input_json=run_json,
+                output_dir=args.output_dir,
+                save_input=args.save_input,
+                number_of_models=args.number_of_models,
+                num_recycles=args.num_recycles,
+            )
+
+            if protenix_success:
+                protenix_output_dirs = list(args.output_dir.glob("protenix_results*"))
+                po = ProtenixOutput(
+                    protenix_output_dirs, input_params, name, args.save_input
+                )
+                outputs.append(po)
+            successful_runs.append(protenix_success)
+
+        if args.openfold3:
+            from abcfold.openfold3.run_openfold3 import run_openfold
+
+            template_hits_path = None
+            if args.templates and args.mmseqs2:
+                template_hits_path = temp_dir.joinpath("all_chains.m8")
+
+            openfold_success = run_openfold(
+                input_json=run_json,
+                output_dir=args.output_dir,
+                save_input=args.save_input,
+                number_of_models=args.number_of_models,
+                template_hits_path=template_hits_path,
+                input_ckpt=args.inference_ckpt_path
+            )
+
+            if openfold_success:
+                openfold_output_dirs = list(args.output_dir.glob("openfold_results*"))
+                oo = OpenfoldOutput(
+                    openfold_output_dirs, input_params, name, args.save_input
+                )
+                outputs.append(oo)
+            successful_runs.append(openfold_success)
 
         if args.no_visuals:
             logger.info("Visuals disabled")
@@ -242,6 +287,7 @@ def run(args, config, defaults, config_file):
                         model.check_clashes()
                         score_file = ao.output[seed][idx]["summary"]
                         plddt = model.residue_plddts
+                        pae = ao.output[seed][idx]["af3_pae"]
                         if len(indicies) > 0:
                             plddt = insert_none_by_minus_one(
                                 indicies[index_counter], plddt
@@ -252,6 +298,7 @@ def run(args, config, defaults, config_file):
                             plot_dict,
                             "AlphaFold3",
                             plddt,
+                            pae,
                             score_file,
                             args.output_dir,
                         )
@@ -267,6 +314,7 @@ def run(args, config, defaults, config_file):
                         model.check_clashes()
                         score_file = bo.output[seed][idx]["json"]
                         plddt = model.residue_plddts
+                        pae = bo.output[seed][idx]["af3_pae"]
                         if len(indicies) > 0:
                             plddt = insert_none_by_minus_one(
                                 indicies[index_counter], plddt
@@ -277,6 +325,7 @@ def run(args, config, defaults, config_file):
                             plot_dict,
                             "Boltz",
                             plddt,
+                            pae,
                             score_file,
                             args.output_dir
                         )
@@ -293,6 +342,7 @@ def run(args, config, defaults, config_file):
                             model.check_clashes()
                             score_file = co.output[seed][idx]["scores"]
                             plddt = model.residue_plddts
+                            pae = co.output[seed][idx]["af3_pae"]
                             if len(indicies) > 0:
                                 plddt = insert_none_by_minus_one(
                                     indicies[index_counter], plddt
@@ -303,13 +353,74 @@ def run(args, config, defaults, config_file):
                                 plot_dict,
                                 "Chai-1",
                                 plddt,
+                                pae,
                                 score_file,
                                 args.output_dir,
                             )
                             chai_models["models"].append(model_data)
 
+        openfold_models = {"models": []}
+        if args.openfold3:
+            if openfold_success:
+                programs_run.append("OpenFold3")
+                for seed in oo.output.keys():
+                    for idx in oo.output[seed].keys():
+                        if idx >= 0:
+                            model = oo.output[seed][idx]["cif"]
+                            model.check_clashes()
+                            score_file = oo.output[seed][idx]["scores"]
+                            plddt = model.residue_plddts
+                            pae = oo.output[seed][idx]["af3_pae"]
+                            if len(indicies) > 0:
+                                plddt = insert_none_by_minus_one(
+                                    indicies[index_counter], plddt
+                                )
+                            index_counter += 1
+                            model_data = get_model_data(
+                                model,
+                                plot_dict,
+                                "OpenFold3",
+                                plddt,
+                                pae,
+                                score_file,
+                                args.output_dir,
+                            )
+                            openfold_models["models"].append(model_data)
+
+        protenix_models = {"models": []}
+        if args.protenix:
+            if protenix_success:
+                programs_run.append("Protenix")
+                for seed in po.output.keys():
+                    for idx in po.output[seed].keys():
+                        if idx >= 0:
+                            model = po.output[seed][idx]["cif"]
+                            model.check_clashes()
+                            score_file = po.output[seed][idx]["scores"]
+                            plddt = model.residue_plddts
+                            pae = po.output[seed][idx]["af3_pae"]
+                            if len(indicies) > 0:
+                                plddt = insert_none_by_minus_one(
+                                    indicies[index_counter], plddt
+                                )
+                            index_counter += 1
+                            model_data = get_model_data(
+                                model,
+                                plot_dict,
+                                "Protenix",
+                                plddt,
+                                pae,
+                                score_file,
+                                args.output_dir,
+                            )
+                            protenix_models["models"].append(model_data)
+
         combined_models = (
-            alphafold_models["models"] + boltz_models["models"] + chai_models["models"]
+            alphafold_models["models"] +
+            boltz_models["models"] +
+            chai_models["models"] +
+            openfold_models["models"] +
+            protenix_models["models"]
         )
 
         # Make the output directory for the models
@@ -323,6 +434,10 @@ def run(args, config, defaults, config_file):
                 output_name = "boltz_model_" + model["model_id"][-1] + ".cif"
             elif model["model_source"] == "Chai-1":
                 output_name = "chai_model_" + model["model_id"][-1] + ".cif"
+            elif model["model_source"] == "OpenFold3":
+                output_name = "openfold_model_" + model["model_id"][-1] + ".cif"
+            elif model["model_source"] == "Protenix":
+                output_name = "protenix_model_" + model["model_id"][-1] + ".cif"
             shutil.copy(
                 cif_file,
                 args.output_dir.joinpath("output_models").joinpath(output_name),
@@ -413,11 +528,13 @@ view the output pages"
 
 def main():
     """
-    Run AlphaFold3 / Boltz / Chai-1
+    Run AlphaFold3 / Boltz / Chai-1 / OpenFold3 / Protenix
     """
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run AlphaFold3 / Boltz / Chai-1")
+    parser = argparse.ArgumentParser(
+        description="Run AlphaFold3 / Boltz / Chai-1 / OpenFold3 / Protenix"
+    )
 
     defaults = {}
     config_file = Path(__file__).parent.joinpath("data", "config.ini")
@@ -426,11 +543,14 @@ def main():
     if config_file.exists():
         config.read(str(config_file))
         defaults.update(dict(config.items("Databases")))
+        defaults.update(dict(config.items("Sif_paths")))
 
     parser = main_argpase_util(parser)
     parser = alphafold_argparse_util(parser)
     parser = boltz_argparse_util(parser)
     parser = chai_argparse_util(parser)
+    parser = openfold_argparse_util(parser)
+    parser = protenix_argparse_util(parser)
     parser = mmseqs2_argparse_util(parser)
     parser = custom_template_argpase_util(parser)
     parser = prediction_argparse_util(parser)

@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from typing import Union
 
+from abcfold.alphafold3.check_install import check_af3_install
+
 logger = logging.getLogger("logger")
 
 
@@ -16,6 +18,7 @@ def run_alphafold3(
     interactive: bool = False,
     number_of_models: int = 5,
     num_recycles: int = 10,
+    save_distogram: bool = False
 ) -> bool:
     """
     Run Alphafold3 using the input JSON file
@@ -39,6 +42,9 @@ def run_alphafold3(
 
     input_json = Path(input_json)
     output_dir = Path(output_dir)
+
+    check_af3_install(interactive=False, sif_path=sif_path)
+
     cmd = generate_af3_cmd(
         input_json=input_json,
         output_dir=output_dir,
@@ -48,6 +54,7 @@ def run_alphafold3(
         interactive=interactive,
         number_of_models=number_of_models,
         num_recycles=num_recycles,
+        save_distogram=save_distogram
     )
 
     logger.info("Running Alphafold3")
@@ -77,6 +84,7 @@ def generate_af3_cmd(
     number_of_models: int = 10,
     num_recycles: int = 5,
     interactive: bool = False,
+    save_distogram: bool = False,
 ) -> str:
     """
     Generate the Alphafold3 command
@@ -96,7 +104,7 @@ def generate_af3_cmd(
     input_json = Path(input_json)
     output_dir = Path(output_dir)
 
-    if sif_path is not None:
+    if sif_path is not None and sif_path != "None":
         return f"""
         singularity exec \
         --nv \
@@ -111,7 +119,8 @@ def generate_af3_cmd(
         --output_dir=/root/af_output \
         --db_dir=/root/public_databases \
         --num_diffusion_samples {number_of_models}\
-        --num_recycles {num_recycles}
+        --num_recycles {num_recycles}\
+        --save_distogram {str(save_distogram).lower()}
     """
 
     else:
@@ -128,5 +137,6 @@ def generate_af3_cmd(
         --model_dir=/root/models \
         --output_dir=/root/af_output \
         --num_diffusion_samples {number_of_models}\
-        --num_recycles {num_recycles}
+        --num_recycles {num_recycles}\
+        --save_distogram {str(save_distogram).lower()}
         """

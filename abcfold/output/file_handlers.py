@@ -30,6 +30,7 @@ class FileTypes(Enum):
 
     NPZ = "npz"
     NPY = "npy"
+    PKL = "pkl"
     CIF = "cif"
     JSON = "json"
 
@@ -59,6 +60,7 @@ class ResidueCountType(Enum):
     AVERAGE = "average"
     CARBONALPHA = "carbonalpha"
     PHOSPHATE = "phosphate"
+    IPSAE = "ipsae"
 
     @classmethod
     def values(cls):
@@ -121,6 +123,27 @@ class NpyFile(FileBase):
         self.data = self.load_npy_file()
 
     def load_npy_file(self) -> np.ndarray:
+        return np.load(self.npy_file, allow_pickle=True)
+
+
+class PklFile(FileBase):
+    def __init__(self, pkl_file: Union[str, Path]):
+        """
+        Object to handle pkl files
+
+        Args:
+            pkl_file (Union[str, Path]): Path to the pkl file
+
+        Attributes:
+            pkl_file (Path): Path to the pkl file
+            data (np.ndarray): Numpy array containing the data from the np
+        """
+
+        super().__init__(pkl_file)
+        self.npy_file = Path(pkl_file)
+        self.data = self.load_pkl_file()
+
+    def load_pkl_file(self) -> np.ndarray:
         return np.load(self.npy_file, allow_pickle=True)
 
 
@@ -441,6 +464,15 @@ class CifFile(FileBase):
                             if atom.id == "P":
                                 score = atom.bfactor
                                 break
+                    elif method == ResidueCountType.IPSAE.value:
+                        for atom in residue:
+                            ca_atom = atom.id == "CA"
+                            cb_atom = atom.id == "CB"
+                            c3_atom = "C3" in atom.id
+                            gly_res = residue.resname == "GLY"
+                            if cb_atom or c3_atom or (gly_res and ca_atom):
+                                score = np.round(atom.bfactor, 2)
+                                break
 
                     if chain.id in plddts:
                         plddts[chain.id].append(score)
@@ -490,7 +522,7 @@ class CifFile(FileBase):
     def check_other(self, chain: Chain, check_list) -> bool:
         sequences = self.input_params.get("sequences")
         if sequences is None:
-            logger.warning("Unable to gain sequence infromation from input file")
+            logger.warning("Unable to gain sequence information from input file")
             return False
         for sequence in sequences:
             for sequence_type, sequence_data in sequence.items():
@@ -738,6 +770,79 @@ for reordering"
         out_dict["_atom_site.group_PDB"] = atom_site_group_pdb
 
         return out_dict
+
+    @staticmethod
+    def _fix_openfold_mmcif(infile: Union[str, Path],
+                            outfile: Union[str, Path]) -> None:
+        """
+        Convert OpenFold3-style mmCIF into a BioPython-compatible mmCIF.
+        """
+        with open(infile) as fin, open(outfile, "w") as fout:
+            # OpenFold3 mmCIF are missing some required headers, and their ATOM/HETATM
+            # files contain a question mark in the middle that BioPython doesn't like
+            # Therefore we need to reformat the lines
+
+            fout.write(
+                "data_structure\n"
+                "loop_\n"
+                "_atom_site.group_PDB\n"
+                "_atom_site.type_symbol\n"
+                "_atom_site.label_atom_id\n"
+                "_atom_site.label_alt_id\n"
+                "_atom_site.label_comp_id\n"
+                "_atom_site.label_asym_id\n"
+                "_atom_site.label_entity_id\n"
+                "_atom_site.label_seq_id\n"
+                "_atom_site.pdbx_PDB_ins_code\n"
+                "_atom_site.auth_seq_id\n"
+                "_atom_site.auth_comp_id\n"
+                "_atom_site.auth_asym_id\n"
+                "_atom_site.auth_atom_id\n"
+                "_atom_site.B_iso_or_equiv\n"
+                "_atom_site.Cartn_x\n"
+                "_atom_site.Cartn_y\n"
+                "_atom_site.Cartn_z\n"
+                "_atom_site.pdbx_PDB_model_num\n"
+                "_atom_site.id\n"
+                "_atom_site.occupancy\n"
+            )
+
+            for line in fin:
+                if line.startswith("ATOM"):
+                    fields = line.split()
+                    fout.write(
+                        f"{fields[0]}   {fields[1]} {fields[2]}   {fields[3]} "
+                        f"{fields[4]} {fields[5]} {fields[6]} {fields[7]} "
+                        f"{fields[8]} {fields[9]} {fields[10]} {fields[11]} "
+                        f"{fields[12]}   {fields[13]} {fields[15]}      "
+                        f"{fields[16]}    {fields[17]}    {fields[18]} "
+                        f"{fields[19]} 1.0\n"
+                    )
+                elif line.startswith("HETATM"):
+                    fields = line.split()
+                    fout.write(
+                        f"{fields[0]} {fields[1]} {fields[2]} {fields[3]} "
+                        f"{fields[4]} {fields[5]} 2 1   . 1   {fields[10]} {fields[11]}"
+                        f" {fields[12]} {fields[13]}  {fields[15]}     "
+                        f"{fields[16]}     {fields[17]}    {fields[18]} "
+                        f"{fields[19]} 1.0\n"
+                    )
+                else:
+                    continue
+
+    @classmethod
+    def from_openfold(cls,
+                      openfold_cif: Union[str, Path],
+                      input_params: Optional[dict] = None) -> "CifFile":
+        """
+        Create a CifFile from an OpenFold3 mmCIF by fixing format differences
+        and returning a CifFile pointing at a temporary fixed file in the same
+        directory as the original file.
+        """
+        openfold_path = Path(openfold_cif)
+        tmp_path = openfold_path.parent / f"{openfold_path.stem}_fixed.cif"
+        cls._fix_openfold_mmcif(str(openfold_path), str(tmp_path))
+        return cls(str(tmp_path), input_params)
 
 
 class ConfidenceJsonFile(FileBase):
